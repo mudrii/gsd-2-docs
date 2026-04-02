@@ -358,7 +358,7 @@ auto_supervisor:
 
 # Git
 git:
-  isolation: worktree           # "worktree" | "branch" | "none"
+  isolation: none               # "worktree" | "branch" | "none" (default changed to "none" in v2.46)
   auto_push: false
   commit_docs: true
   main_branch: main
@@ -560,6 +560,62 @@ v2.28 added multiple reliability safeguards:
 - **Blob garbage collection**: prevents unbounded disk growth.
 
 Combined with crash recovery and headless auto-restart, auto mode is designed for true "fire and forget" overnight execution.
+
+---
+
+## Quality Gates (v2.50)
+
+Starting in v2.50.0, auto mode evaluates 8-question quality gates during planning and completion phases. These gates are embedded in the planning and completion templates and evaluated in a dedicated `evaluating-gates` phase. Quality gates ensure that milestones meet structural and content standards before advancing.
+
+---
+
+## Git Trailers (v2.49)
+
+Starting in v2.49.0, GSD metadata (milestone ID, slice ID, phase) is stored in git trailers instead of commit subject scopes. This produces cleaner commit messages while preserving full traceability:
+
+```
+feat: core type definitions
+
+GSD-Milestone: M001
+GSD-Slice: S01
+GSD-Task: T01
+```
+
+Previous format (`feat(S01/T01): core type definitions`) is still recognized for backward compatibility.
+
+---
+
+## --yolo Flag (v2.49)
+
+The `--yolo` flag on `/gsd auto` skips the interactive project init flow, using sensible defaults for a new project. Useful for quick prototyping or CI environments where interactive prompts are not available:
+
+```
+/gsd auto --yolo
+```
+
+---
+
+## Sliding-Window Stuck Detection (v2.39)
+
+The stuck detection system was replaced in v2.39.0 with a sliding-window approach. Instead of a simple counter that triggers after two consecutive failures, GSD now evaluates a rolling window of recent dispatches to detect patterns of repeated failures. This reduces false positives (where a single transient failure would trigger remediation) and catches more subtle stuck patterns (such as alternating between two failing states).
+
+---
+
+## Concurrent Invocation Guard (v2.58)
+
+Starting in v2.58.0, `startAuto()` is guarded against concurrent invocation. If auto mode is already running when a second call to `startAuto()` occurs (e.g., from a race condition in the UI or a duplicate slash command), the second call is rejected rather than spawning a competing auto-mode loop. This prevents state corruption from parallel dispatches within the same session.
+
+---
+
+## Hallucination Guard (v2.41)
+
+Auto mode rejects `execute-task` results that contain zero tool calls, treating them as hallucinated completions. When the LLM claims a task is complete but did not actually invoke any tools to make changes, the task is retried with a diagnostic prompt. This prevents phantom task completions that produce no actual code changes.
+
+---
+
+## Merge Anchor Verification (v2.41)
+
+Before tearing down a worktree after milestone completion, auto mode now verifies that the merge was properly anchored — confirming that the worktree's changes are reflected in the target branch. This prevents data loss in edge cases where the merge appeared successful but the branch pointer was not updated correctly.
 
 ---
 

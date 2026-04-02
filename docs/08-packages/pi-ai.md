@@ -220,7 +220,19 @@ Tool schemas are expressed with TypeBox (`Type.Object(...)`) and validated at ru
 
 The `KnownProvider` type lists every provider the package ships built-in support for:
 
-`amazon-bedrock`, `anthropic`, `google`, `google-gemini-cli`, `google-antigravity`, `google-vertex`, `openai`, `azure-openai-responses`, `openai-codex`, `github-copilot`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `mistral`, `minimax`, `minimax-cn`, `huggingface`, `opencode`, `opencode-go`, `kimi-coding`, `alibaba-coding-plan`, `ollama-cloud`.
+`amazon-bedrock`, `anthropic`, `anthropic-vertex` (v2.38), `google`, `google-gemini-cli`, `google-antigravity`, `google-vertex`, `openai`, `azure-openai-responses`, `openai-codex`, `github-copilot`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `mistral`, `minimax`, `minimax-cn`, `huggingface`, `opencode`, `opencode-go`, `kimi-coding`, `alibaba-coding-plan`, `ollama-cloud`, `ollama` (v2.58).
+
+### Recent Provider Additions
+
+| Provider | Added In | Description |
+|----------|----------|-------------|
+| `anthropic-vertex` | v2.38.0 | Claude models on Google Vertex AI. Allows using Anthropic models through GCP billing and compliance. |
+| Claude Code CLI | v2.47.0 | External provider extension using the Claude Code CLI as a backend. Supports `externalToolExecution` mode for tool calls. Non-API-key provider — uses Claude Code's own authentication. |
+| `ollama` | v2.58.0 | Local Ollama instance for fully offline inference. Added to the custom models registry alongside GLM-5.1 on Z.AI. |
+
+### Capability Metadata Routing (v2.52)
+
+Starting in v2.52.0, `pi-ai` replaced model-ID pattern matching with capability metadata for model routing decisions. Instead of inferring model capabilities from naming conventions (e.g., "opus" implies high quality), models now carry explicit capability metadata that the routing system uses to make dispatch decisions. This makes routing more reliable when new models are added and eliminates misclassification of models with non-standard naming.
 
 ## How to Use / Import
 

@@ -1,7 +1,7 @@
 # GSD-2 Architecture Overview
 
 **Package**: `gsd-pi` (npm)
-**Version**: 2.33.1
+**Version**: 2.58.0
 **License**: MIT
 **Repository**: https://github.com/gsd-build/gsd-2
 **Runtime**: Node.js >= 22.0.0
@@ -24,8 +24,11 @@ gsd-2/
     native/                 @gsd/native      — TypeScript bindings for Rust N-API engine
     pi-agent-core/          @gsd/pi-agent-core (v0.57.1) — general-purpose agent core (vendored from pi-mono)
     pi-ai/                  @gsd/pi-ai (v0.57.1)         — unified LLM API (vendored from pi-mono)
-    pi-coding-agent/        @gsd/pi-coding-agent (v2.33.1) — coding agent CLI (vendored from pi-mono)
+    pi-coding-agent/        @gsd/pi-coding-agent (v2.58.0) — coding agent CLI (vendored from pi-mono)
     pi-tui/                 @gsd/pi-tui (v0.57.1)        — terminal UI library (vendored from pi-mono)
+    rpc-client/             @gsd-build/rpc-client (v2.52.0) — standalone RPC protocol v2 client SDK (zero internal deps)
+    mcp-server/             @gsd-build/mcp-server (v2.52.0) — MCP server for GSD orchestration (Claude Code, Cursor, etc.)
+    daemon/                 @gsd-build/daemon (v0.1.0) — background daemon, Discord bot, launchd integration
   native/
     Cargo.toml              Rust workspace root
     crates/
@@ -39,6 +42,9 @@ gsd-2/
       linux-x64-gnu/        @gsd-build/engine-linux-x64-gnu
       win32-x64-msvc/       @gsd-build/engine-win32-x64-msvc
   studio/                   @gsd/studio — Electron desktop app (React 19, Zustand, electron-vite)
+  vscode-extension/         GSD-2 VS Code extension (v0.3.0, publisher: FluxLabs) — sidebar dashboard, @gsd chat participant, activity feed, code lens, session forking, 33 commands
+  web/                      gsd-web (v0.1.0) — Next.js 16 web interface (React 19, Radix UI, CodeMirror, xterm, Tailwind CSS 4)
+  gsd-orchestrator/         Orchestrator skill — workflow templates, references
   src/resources/
     extensions/             Bundled extensions (synced to ~/.gsd/agent/extensions/)
     agents/                 Bundled agent definitions (scout, researcher, worker)
@@ -52,9 +58,12 @@ gsd-2/
 |---------|---------|------|
 | `@gsd/native` | 0.1.0 | TypeScript wrapper around Rust N-API addon; provides `grep`, `glob`, `ps`, `highlight`, `ast`, `diff`, `text`, `html`, `image`, `fd`, `clipboard`, `git`, `gsd_parser` |
 | `@gsd/pi-agent-core` | 0.57.1 | General-purpose agent core: session management, tool dispatch, extension loading |
-| `@gsd/pi-ai` | 0.57.1 | Unified LLM API across providers (Anthropic, OpenAI, Google, xAI, Mistral, Groq, OpenRouter, Bedrock, custom OpenAI-compatible) |
-| `@gsd/pi-coding-agent` | 2.33.1 | Full coding agent: `InteractiveMode`, `SessionManager`, `AuthStorage`, `ModelRegistry`, `SettingsManager`, RPC/MCP modes |
+| `@gsd/pi-ai` | 0.57.1 | Unified LLM API across providers (Anthropic, OpenAI, Google, xAI, Mistral, Groq, OpenRouter, Bedrock, Anthropic Vertex, custom OpenAI-compatible) |
+| `@gsd/pi-coding-agent` | 2.58.0 | Full coding agent: `InteractiveMode`, `SessionManager`, `AuthStorage`, `ModelRegistry`, `SettingsManager`, RPC/MCP modes |
 | `@gsd/pi-tui` | 0.57.1 | Terminal UI primitives used by the interactive mode |
+| `@gsd-build/rpc-client` | 2.52.0 | Standalone RPC client SDK — zero internal dependencies; RPC protocol v2 types, JSONL utilities, `RpcClient` class |
+| `@gsd-build/mcp-server` | 2.52.0 | MCP server exposing GSD orchestration tools for Claude Code, Cursor, and other MCP clients; `SessionManager`, `createMcpServer` |
+| `@gsd-build/daemon` | 0.1.0 | Background daemon: project scanning, Discord bot (discord.js v14) with orchestrator, event bridge, channel manager, launchd integration, session lifecycle management |
 
 All four `pi-*` packages are vendored from the upstream `pi-mono` repository. They are compiled separately (`npm run build:pi`) before the main GSD build.
 
@@ -78,33 +87,36 @@ The startup uses a two-file pattern to ensure environment variables are set befo
    - `GSD_BUNDLED_EXTENSION_PATHS` = serialized list of enabled extension entry points
    - `NODE_PATH` = prepends gsd's `node_modules` so extensions loaded via jiti can resolve their dependencies
 4. **First-launch banner**: If `~/.gsd/` does not exist, prints a branded welcome logo to stderr.
-5. **Extension discovery**: Scans `src/resources/extensions/` (or `dist/resources/extensions/`), remaps paths to `~/.gsd/agent/extensions/`, filters by the extension registry, and serializes to `GSD_BUNDLED_EXTENSION_PATHS`.
+5. **Extension discovery**: Scans `src/resources/extensions/` (or `dist/resources/extensions/`), remaps paths to `~/.gsd/agent/extensions/`, filters by the unified extension registry, sorts extensions in topological dependency order, and serializes to `GSD_BUNDLED_EXTENSION_PATHS`.
 6. **Proxy setup**: If `HTTP_PROXY`/`HTTPS_PROXY` env vars are set, lazy-loads `undici` and configures a global proxy dispatcher.
 7. **Workspace package linking**: Ensures `@gsd/*` packages are symlinked (or copied on Windows) from `packages/` into `node_modules/@gsd/`. Validates that critical packages (`@gsd/pi-coding-agent`) are resolvable.
 8. **Dynamic import**: `await import('./cli.js')` — all Pi SDK imports happen here, after environment is fully configured.
 
 ### cli.ts (main application logic)
 
-1. **CLI argument parsing**: Detects `--mode`, `--print`, `--continue`, `--model`, `--extension`, `--worktree`, and subcommands.
-2. **Resource skew check**: Verifies that synced resources in `~/.gsd/agent/` are not from a newer GSD version than the running binary.
-3. **TTY gate**: Requires a terminal for interactive mode; suggests `--print`, `--mode rpc`, `--mode mcp`, or `--mode text` for non-TTY environments.
-4. **Subcommand dispatch**: `config`, `update`, `sessions`, `headless`, `worktree` each have dedicated handlers.
-5. **Tool bootstrap**: Provisions managed binaries (`fd`, `rg`) into `~/.gsd/agent/bin/`.
-6. **Auth and credential hydration**: Creates `AuthStorage` from `~/.gsd/agent/auth.json`, loads stored env keys (Brave, Context7, Jina, Tavily, Slack, Discord, Telegram, Groq, Ollama, custom OpenAI), migrates Pi credentials.
-7. **Model registry**: Loads `models.json`, validates the configured default model, auto-selects a fallback if the configured model no longer exists (preference order: Pi default, GPT-5.4, any OpenAI, Claude Opus 4-6, any Anthropic, first available).
-8. **Onboarding**: On first launch (no LLM provider configured), runs a clack-based interactive wizard: provider selection (OAuth or API key), web search setup, remote questions (Discord/Slack/Telegram), optional tool keys.
-9. **Resource sync**: `initResources()` copies bundled extensions, agents, and skills to `~/.gsd/agent/` (skipped when version + content hash match).
-10. **Session creation**: Per-directory session storage under `~/.gsd/sessions/--<encoded-cwd>--/`. Supports `SessionManager.create()`, `.continueRecent()`, and `.open()`.
-11. **Agent session**: Creates session via `createAgentSession()` with auth, model registry, settings, session manager, and resource loader.
-12. **Interactive mode**: Instantiates `InteractiveMode` and calls `run()`.
+1. **Startup timings**: When `GSD_STARTUP_TIMING=1`, records per-phase timing via `startup-timings.ts` and prints a summary to stderr on completion.
+2. **CLI argument parsing**: Detects `--mode`, `--print`, `--continue`, `--model`, `--extension`, `--worktree`, `--bare`, `--resume`, and subcommands.
+3. **Resource skew check**: Verifies that synced resources in `~/.gsd/agent/` are not from a newer GSD version than the running binary. Uses a content fingerprint (SHA-256 computed from file paths and sizes) to detect same-version content changes.
+4. **TTY gate**: Requires a terminal for interactive mode; suggests `--print`, `--mode rpc`, `--mode mcp`, or `--mode text` for non-TTY environments.
+5. **Subcommand dispatch**: `config`, `update`, `sessions`, `headless`, `worktree` each have dedicated handlers.
+6. **Tool bootstrap**: Provisions managed binaries (`fd`, `rg`) into `~/.gsd/agent/bin/`.
+7. **Auth and credential hydration**: Creates `AuthStorage` from `~/.gsd/agent/auth.json`, loads stored env keys (Brave, Context7, Jina, Tavily, Slack, Discord, Telegram, Groq, Ollama, custom OpenAI), migrates Pi credentials.
+8. **Model registry**: Loads `models.json`, validates the configured default model, auto-selects a fallback if the configured model no longer exists (preference order: Pi default, GPT-5.4, any OpenAI, Claude Opus 4-6, any Anthropic, first available).
+9. **Onboarding**: On first launch (no LLM provider configured), runs a clack-based interactive wizard: provider selection (OAuth or API key), web search setup, remote questions (Discord/Slack/Telegram), optional tool keys.
+10. **Resource sync**: `initResources()` copies bundled extensions, agents, and skills to `~/.gsd/agent/` (skipped when version + content fingerprint match).
+11. **SQLite database initialization**: The GSD extension opens (or creates) a SQLite database (via `sql.js`) for project state. Schema migrations run on open. Auto-mode gates on SQLite availability.
+12. **Startup model validation**: After `createAgentSession()` (so extension-provided models are registered), `validateConfiguredModel()` in `startup-model-validation.ts` checks that the configured default model still exists in the registry. If not, selects a fallback without overwriting valid extension-provided models.
+13. **Session creation**: Per-directory session storage under `~/.gsd/sessions/--<encoded-cwd>--/`. Supports `SessionManager.create()`, `.continueRecent()`, and `.open()`.
+14. **Agent session**: Creates session via `createAgentSession()` with auth, model registry, settings, session manager, and resource loader.
+15. **Interactive mode**: Instantiates `InteractiveMode` and calls `run()`.
 
 ---
 
 ## 3. Key Architectural Decisions
 
-### State Lives on Disk
+### State Lives on Disk and in SQLite
 
-`.gsd/` in the project root is the sole source of truth. Auto mode reads it, writes it, and advances based on what it finds. No in-memory state survives across sessions. This enables crash recovery, multi-terminal steering, and session resumption.
+`.gsd/` in the project root is the source of truth. Starting with v2.44.0, tool-driven write-side state transitions use atomic SQLite tool calls instead of direct markdown mutation. `deriveStateFromDb()` derives workflow state from the database, with disk-to-DB reconciliation when milestones exist on disk but are missing from the database. Disk artifacts (STATE.md, roadmaps, plans) remain the fallback when the database is unavailable.
 
 ### Two-File Loader Pattern
 
@@ -129,6 +141,10 @@ Every auto-mode dispatch creates a new agent session. The LLM starts with a clea
 ### NODE_PATH Injection
 
 GSD prepends its own `node_modules` to `NODE_PATH` and calls `Module._initPaths()` to force Node to re-evaluate module search paths. Without this, extensions loaded via jiti (from Pi's location) cannot resolve dependencies like `playwright` that live in GSD's `node_modules`.
+
+### Single-Writer Engine
+
+The single-writer engine (v2/v3, introduced in v2.46.0) enforces discipline on state transitions. State machine guards prevent invalid transitions, actor identity tracks which component initiated a write, and operations are reversible. The `workflow-logger` is wired into engine, tool, manifest, and reconcile paths to provide an audit trail. All write-side DB mutations flow through typed tool calls with transaction isolation.
 
 ---
 
@@ -211,6 +227,8 @@ Extensions are discovered by `discoverExtensionEntryPaths()` in `src/extension-d
 1. Top-level `.ts`/`.js` files in the extensions directory are standalone entry points.
 2. Subdirectories are resolved via: (a) `package.json` with `pi.extensions` array, or (b) `index.ts`/`index.js` fallback.
 
+Extensions are filtered by the unified registry and sorted in topological dependency order before loading.
+
 ### Registry
 
 The extension registry (`~/.gsd/extensions/registry.json`) tracks enable/disable state per extension:
@@ -228,11 +246,11 @@ Each extension manifest declares:
 
 ### Loading Flow
 
-1. **loader.ts**: Scans bundled extensions directory, remaps paths to `~/.gsd/agent/extensions/`, filters by registry, serializes to `GSD_BUNDLED_EXTENSION_PATHS`.
+1. **loader.ts**: Scans bundled extensions directory, remaps paths to `~/.gsd/agent/extensions/`, filters by registry, sorts topologically, serializes to `GSD_BUNDLED_EXTENSION_PATHS`.
 2. **resource-loader.ts**: `initResources()` syncs bundled extensions to `~/.gsd/agent/extensions/`. `buildResourceLoader()` constructs a `DefaultResourceLoader` that loads from both `~/.gsd/agent/extensions/` (GSD) and `~/.pi/agent/extensions/` (Pi), deduplicating by extension key. Pi-origin extensions that overlap with bundled GSD extensions are excluded.
 3. **createAgentSession()**: The Pi SDK loads extensions from the resource loader using jiti for TypeScript transpilation.
 
-### Bundled Extensions (v2.33.1)
+### Bundled Extensions (v2.58.0)
 
 | Extension | Directory | Purpose |
 |-----------|-----------|---------|
@@ -254,6 +272,10 @@ Each extension manifest declares:
 | TTSR | `ttsr/` | Tool-triggered system rules |
 | Universal Config | `universal-config/` | Discovery of existing AI tool configs |
 | AWS Auth | `aws-auth/` | AWS authentication for Bedrock |
+| Claude Code CLI | `claude-code-cli/` | Claude Code CLI provider extension |
+| GitHub Sync | `github-sync/` | Auto-sync to GitHub Issues, PRs, and Milestones |
+| Ollama | `ollama/` | Local Ollama model integration |
+| CMux | `cmux/` | Terminal multiplexer integration |
 
 ---
 
@@ -280,6 +302,18 @@ Legacy flat sessions (pre per-directory scoping) are auto-migrated on startup.
 
 The `gsd sessions` subcommand lists past sessions for the current directory and allows interactive selection for resumption.
 
+### DB-Backed State Derivation
+
+`deriveStateFromDb()` reads workflow state (milestones, slices, tasks, verification evidence) from the SQLite database instead of parsing markdown files. When milestones exist on disk but are missing from the database, disk-to-DB reconciliation runs automatically. Queue ordering respects `queue-order.json` in DB-backed derivation.
+
+### Session Lock
+
+Session locking uses OS-level file locks (`proper-lockfile`) for exclusive access. Multi-path cleanup ensures locks are released on all exit paths (normal exit, SIGINT, SIGTERM, SIGHUP, uncaught exceptions). False positive hardening retries lock file reads before declaring compromise, and a PID self-check prevents a process from treating its own lock as foreign. Stale numbered lock files and `.gsd.lock/` directories are cleaned up automatically.
+
+### Workflow Logger
+
+The workflow logger (`workflow-logger.ts`) is wired into engine, tool, manifest, and reconcile paths. It records structured audit entries for all state transitions, providing observability into the single-writer engine's operation.
+
 ---
 
 ## 8. Headless Mode Architecture
@@ -294,13 +328,24 @@ The headless orchestrator (`src/headless.ts`) acts as a supervisory process:
 2. Creates an `RpcClient` that spawns a child `gsd --mode rpc` process.
 3. Sends `/gsd <command>` as a prompt to the RPC child.
 4. Monitors events from the child, auto-responding to `extension_ui_request` events.
-5. Detects completion via terminal notifications, idle timeouts, or `agent_end` events.
+5. Detects completion via `execution_complete` events (RPC v2), idle timeouts, or `agent_end` events.
+
+### RPC Protocol v2
+
+The `@gsd-build/rpc-client` package implements RPC protocol v2 with:
+
+- **Init handshake**: Client sends `{ type: "init", protocolVersion: 2 }`, server responds with `sessionId` and `capabilities` (available events and commands).
+- **Version detection**: v1 is the implicit default; v2 requires the init handshake. The client auto-detects protocol version.
+- **Execution tracking**: `runId` generation on `prompt`/`steer`/`follow_up` commands enables correlation with `execution_complete` and `cost_update` events.
+- **Typed events**: `RpcExecutionCompleteEvent` (status: completed/error/cancelled with stats) and `RpcCostUpdateEvent` (per-turn and cumulative cost with token breakdown).
+- **Shutdown**: Graceful shutdown command for clean process teardown.
+- **Subscribe**: Event type filtering via `subscribe` command.
 
 ### Options
 
 | Flag | Purpose |
 |------|---------|
-| `--timeout <ms>` | Overall timeout (default 300s, 600s for new-milestone) |
+| `--timeout <ms>` | Overall timeout (default 300s, 600s for new-milestone; disabled for auto-mode) |
 | `--json` | Output events as JSONL to stdout |
 | `--model <id>` | Override model for the session |
 | `--context <file>` | Context file for new-milestone command |
@@ -312,6 +357,16 @@ The headless orchestrator (`src/headless.ts`) acts as a supervisory process:
 | `--response-timeout <ms>` | Timeout for supervised orchestrator responses (default 30s) |
 | `--answers <file>` | Pre-supplied answer file for automated question responses |
 | `--events <types>` | Filter JSONL output to specific event types |
+| `--bare` | Skip user config (PREFERENCES.md, KNOWLEDGE.md) for clean-room execution |
+| `--resume <session>` | Resume a session by ID prefix matching |
+
+### Text Mode and Verbose Output
+
+Text mode (`--mode text`) and headless verbose output provide observability without a full TUI:
+
+- Colorized output with thinking content, phase transitions, cost breakdowns, and durations.
+- Tool call display showing tool names, arguments, and results.
+- UAT pause skipping in headless mode to avoid blocking unattended execution.
 
 ### Exit Codes
 
@@ -375,6 +430,7 @@ npm run build
   7. copy-resources     — copy src/resources/ to dist/resources/
   8. copy-themes        — copy Pi theme assets
   9. copy-export-html   — copy HTML export templates
+  10. build-web-if-stale — conditionally build Next.js web UI to dist/web
 ```
 
 ### TypeScript Configuration
@@ -393,14 +449,15 @@ npm run build
 
 The `files` field in `package.json` includes:
 - `dist/` — compiled JS + resources
+- `dist/web` — compiled Next.js web UI
 - `packages/` — workspace packages (vendored Pi SDK)
 - `pkg/` — PI_PACKAGE_DIR shim
 - `src/resources/` — bundled extensions, agents, workflow docs
-- `scripts/postinstall.js`, `scripts/link-workspace-packages.cjs`
+- `scripts/postinstall.js`, `scripts/link-workspace-packages.cjs`, `scripts/ensure-workspace-builds.cjs`
 
 ### postinstall
 
-`npm run postinstall` runs `link-workspace-packages.cjs` to symlink `@gsd/*` packages, followed by `postinstall.js` for any additional setup. This handles the common case; `loader.ts` has a fallback that re-links on startup if the symlinks are missing (covers `npx --ignore-scripts`).
+`npm run postinstall` runs `link-workspace-packages.cjs` to symlink `@gsd/*` packages, followed by `ensure-workspace-builds.cjs` to verify workspace packages are compiled, and then `postinstall.js` for any additional setup. This handles the common case; `loader.ts` has a fallback that re-links on startup if the symlinks are missing (covers `npx --ignore-scripts`).
 
 ---
 
@@ -409,6 +466,8 @@ The `files` field in `package.json` includes:
 | Dependency | Role |
 |------------|------|
 | `@anthropic-ai/sdk` | Anthropic Claude API |
+| `@anthropic-ai/vertex-sdk` | Claude on Vertex AI |
+| `@anthropic-ai/claude-agent-sdk` | Claude Agent SDK (optional) |
 | `openai` | OpenAI API |
 | `@google/genai` | Google Gemini API |
 | `@mistralai/mistralai` | Mistral API |
@@ -416,6 +475,7 @@ The `files` field in `package.json` includes:
 | `@modelcontextprotocol/sdk` | MCP protocol support |
 | `@mariozechner/jiti` | Runtime TypeScript transpilation for extensions |
 | `playwright` | Browser automation (browser-tools extension) |
+| `sql.js` | SQLite database for project state (WebAssembly build) |
 | `chalk` / `picocolors` | Terminal coloring |
 | `@clack/prompts` | Interactive prompts (onboarding wizard) |
 | `sharp` | Image processing |
@@ -426,6 +486,7 @@ The `files` field in `package.json` includes:
 | `@sinclair/typebox` | Runtime type validation |
 | `ajv` + `ajv-formats` | JSON Schema validation |
 | `koffi` (optional) | FFI for native platform APIs (Mac Tools) |
+| `discord.js` | Discord bot integration (daemon package) |
 
 ---
 
@@ -436,13 +497,14 @@ The `files` field in `package.json` includes:
 | Interactive | `gsd` | Full TUI session with `InteractiveMode` |
 | Print | `gsd --print "msg"` or `gsd --mode text "msg"` | Single-shot prompt, text output |
 | JSON | `gsd --mode json "msg"` | Single-shot prompt, JSON output |
-| RPC | `gsd --mode rpc` | JSON-RPC over stdin/stdout (used by headless, VS Code extension) |
+| RPC | `gsd --mode rpc` | JSON-RPC over stdin/stdout (used by headless, VS Code extension, daemon) |
 | MCP | `gsd --mode mcp` | MCP server over stdin/stdout |
 | Headless | `gsd headless [command]` | Supervised auto-mode without TUI |
+| Web | `gsd --web` | Browser-based web interface (Next.js) |
 | Config | `gsd config` | Re-run setup wizard |
 | Update | `gsd update` | Self-update via npm |
 | Sessions | `gsd sessions` | List and resume past sessions |
-| Worktree | `gsd worktree <list\|merge\|clean\|remove>` | Git worktree management |
+| Worktree | `gsd worktree <list|merge|clean|remove>` | Git worktree management |
 
 ---
 
@@ -463,7 +525,7 @@ Agent definitions are synced from `src/resources/agents/` to `~/.gsd/agent/agent
 The auto-mode state machine reads `.gsd/` project state and dispatches work units:
 
 ```
-1.  Read disk state (STATE.md, roadmap, plans)
+1.  Read state (DB-backed via deriveStateFromDb, with disk fallback)
 2.  Determine next unit type and ID
 3.  Classify complexity -> select model tier
 4.  Apply budget pressure adjustments
@@ -484,6 +546,9 @@ Key auto-mode modules (in the GSD extension):
 |--------|---------|
 | `auto.ts` | State machine and orchestration |
 | `auto/session.ts` | `AutoSession` class — mutable auto-mode state |
+| `auto/phases.ts` | Pipeline phase definitions |
+| `auto/loop-deps.ts` | Loop dependency injection |
+| `auto/run-unit.ts` | Single unit execution |
 | `auto-dispatch.ts` | Declarative dispatch table (phase -> unit mapping) |
 | `auto-idempotency.ts` | Completed-key checks, skip loop detection |
 | `auto-stuck-detection.ts` | Stuck loop recovery and retry escalation |
@@ -493,5 +558,53 @@ Key auto-mode modules (in the GSD extension):
 | `complexity-classifier.ts` | Unit complexity classification (light/standard/heavy) |
 | `model-router.ts` | Dynamic model routing with cost-aware selection |
 | `metrics.ts` | Token and cost tracking ledger |
-| `state.ts` | State derivation from disk |
-| `session-lock.ts` | OS-level exclusive session locking |
+| `state.ts` | State derivation from disk and DB (`deriveStateFromDb`) |
+| `session-lock.ts` | OS-level exclusive session locking with multi-path cleanup |
+| `db-writer.ts` | Single-writer DB mutation layer |
+| `workflow-logger.ts` | Structured audit log for state transitions |
+| `workflow-reconcile.ts` | Disk-to-DB reconciliation |
+| `workflow-manifest.ts` | Workflow template manifest loading |
+
+---
+
+## 15. VS Code Extension
+
+The VS Code extension (`vscode-extension/`, v0.3.0, publisher: FluxLabs) provides IDE integration:
+
+- **Sidebar dashboard**: Webview-based agent panel, session tree, and activity feed
+- **@gsd chat participant**: VS Code Chat integration for inline agent queries
+- **Code lens**: "Ask GSD" lens above functions and classes (configurable)
+- **SCM integration**: Agent changes shown as a source control provider with accept/discard per-file
+- **Session management**: New session, switch session, fork session, session naming
+- **33 commands**: Start/stop agent, send message, cycle model/thinking, abort, export HTML, steer, run bash, switch model, fix problems, commit agent changes, create agent branch, show diff, approval mode, and more
+- **Keybindings**: Chord-based shortcuts (Cmd+Shift+G prefix on macOS)
+- **Configuration**: Binary path, auto-start, auto-compaction, code lens toggle, progress notifications, context warning threshold, approval mode (auto-approve/ask/plan-only)
+
+Communicates with the GSD CLI via RPC mode (`gsd --mode rpc`).
+
+---
+
+## 16. Web Interface
+
+The web interface (`web/`, gsd-web v0.1.0) is a Next.js 16 application providing browser-based access:
+
+- **Stack**: React 19, Radix UI component library, Tailwind CSS 4, CodeMirror editor, xterm.js terminal
+- **Features**: Dark/light themes, mobile responsive layout, authentication with localStorage token persistence, project root selection
+- **Launch**: `gsd --web` or `npm run gsd:web` with `--host`, `--port`, `--allowed-origins` flags
+- **Deployment**: Builds to standalone mode for `node .next/standalone/web/server.js`
+
+---
+
+## 17. Daemon
+
+The daemon package (`packages/daemon/`, `@gsd-build/daemon` v0.1.0) provides a background process for unattended operation:
+
+- **Session management**: Manages headless GSD sessions across multiple projects via `@gsd-build/rpc-client`
+- **Discord bot**: discord.js v14 integration with authorization guard, slash commands, channel-per-project management, event bridging, and message batching
+- **Orchestrator**: Natural-language command routing via LLM (configurable model) on a control channel
+- **Project scanner**: Discovers projects by marker files (git, node, gsd, rust, python, go)
+- **Event formatting**: 10 pure-function formatters mapping RPC events to Discord embeds
+- **Verbosity levels**: Per-channel verbosity (default/verbose/quiet) for event streaming
+- **launchd integration**: macOS launch agent install/uninstall/status via plist generation
+- **Configuration**: YAML-based config with Discord token, guild/owner IDs, scan roots, and log settings
+- **Binary**: `gsd-daemon` CLI entry point

@@ -331,6 +331,118 @@ For structured post-mortem analysis of auto-mode failures:
 
 This produces a structured analysis of what went wrong, drawing from session logs in `.gsd/activity/` (JSONL format).
 
+## SQLite Initialization Issues (v2.45+)
+
+### Auto mode fails to start with SQLite errors
+
+**Symptoms:** Auto mode fails during bootstrap with errors related to SQLite database creation or migration.
+
+**Cause:** Starting in v2.44.0, GSD uses SQLite for state management. If the database file is corrupted, the migration schema is incompatible, or the `.gsd/` directory has incorrect permissions, SQLite initialization can fail.
+
+**Fix:**
+
+```bash
+# Check if the database exists and is valid
+ls -la .gsd/gsd.db
+
+# If corrupted, remove and let GSD recreate it
+rm .gsd/gsd.db .gsd/gsd.db-wal .gsd/gsd.db-shm
+
+# Resume — GSD will reconcile state from disk artifacts
+/gsd auto
+```
+
+GSD gates auto-mode bootstrap on SQLite availability (v2.45). If SQLite is unavailable, it falls back to file-based state derivation. For fresh projects with an empty `.gsd/`, an empty database is created automatically (v2.46.1).
+
+---
+
+## Web Mode EADDRINUSE
+
+### Web mode fails to start — "address already in use"
+
+**Symptoms:** `gsd web` or `gsd --web` fails with `EADDRINUSE` error.
+
+**Cause:** A previous web mode session did not shut down cleanly and the port is still bound.
+
+**Fix:** GSD v2.43.0+ automatically kills stale server processes before launch. If this does not resolve it:
+
+```bash
+# Find and kill the stale process
+lsof -i :3000 | grep node
+kill <PID>
+
+# Restart web mode
+gsd web
+```
+
+You can also use a different port:
+
+```bash
+gsd web --port 3001
+```
+
+---
+
+## VS Code Extension Connection Issues
+
+### Extension cannot connect to GSD
+
+**Symptoms:** The VS Code extension shows "not connected" or health widget reports no initialized projects.
+
+**Fixes:**
+
+- Ensure GSD is running in the same project directory that VS Code has open.
+- On Remote SSH connections, ensure `extensionKind` is set correctly (v2.50 added Remote SSH support).
+- Check that the GSD version matches the extension version — version mismatches can cause protocol incompatibility.
+- On Windows, ensure the `shell` flag is set for spawn operations (v2.53 fix).
+
+---
+
+## Node v24 ESM Issues
+
+### `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` on startup
+
+**Symptoms:** GSD crashes on startup with Node v24 and an error about unsupported module type stripping.
+
+**Cause:** Node v24 changed ESM module resolution behavior, which conflicts with GSD's dynamic imports.
+
+**Fix:** This was resolved in v2.42.0. Update GSD to v2.42.0 or later:
+
+```bash
+gsd update
+```
+
+If you cannot update, the workaround is to use Node v22 LTS:
+
+```bash
+nvm use 22
+```
+
+---
+
+## Windows EPERM on .gsd Migration
+
+### EPERM errors during .gsd directory operations on Windows
+
+**Symptoms:** Operations that modify the `.gsd/` directory fail with `EPERM` (permission denied) errors on Windows.
+
+**Cause:** Windows file locking is more aggressive than Unix. If another process (VS Code, antivirus, file indexer) has a handle open on `.gsd/` files, modifications fail.
+
+**Fixes:**
+
+- v2.42.0+ wraps `rmSync` cleanup in try/catch with `maxRetries` for Windows EPERM compatibility.
+- Close VS Code or other editors that may have `.gsd/` files open.
+- Temporarily disable antivirus real-time scanning on the project directory.
+- Run GSD from an elevated terminal if the issue persists.
+
+For the specific case of `.gsd` migration from an older layout, ensure no other GSD sessions are running and retry:
+
+```bash
+gsd doctor fix
+```
+
+---
+
 ## Getting Help
 
 - **GitHub Issues:** [github.com/gsd-build/GSD-2/issues](https://github.com/gsd-build/GSD-2/issues) — file a bug or search for known issues

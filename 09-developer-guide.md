@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide covers extension development, the Pi SDK, the context pipeline, the TUI component system, agent design principles, architecture decisions, and the companion apps (VS Code extension and Studio).
+This guide covers extension development, the Pi SDK, the context pipeline, the TUI component system, agent design principles, architecture decisions, the companion apps (VS Code extension and Studio), the daemon/Discord integration, and testing infrastructure.
 
 ---
 
@@ -125,6 +125,41 @@ Extensions are discovered from these locations:
 1. **Global:** `~/.gsd/agent/extensions/` -- always loaded
 2. **Project:** `.gsd/extensions/` -- loaded when in that project directory
 3. **CLI flag:** `pi -e ./my-extension.ts` -- loaded explicitly
+
+### Extension Manifest and Registry (v2.30.0+)
+
+Extensions can declare an `extension-manifest.json` in their directory with metadata that the registry uses for enable/disable control:
+
+```json
+{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.0.0",
+  "description": "Does something useful",
+  "tier": "community",
+  "requires": { "platform": "any" },
+  "provides": {
+    "tools": ["my_tool"],
+    "commands": ["/my-command"],
+    "hooks": ["tool_call"],
+    "shortcuts": ["ctrl+shift+m"]
+  },
+  "dependencies": {
+    "extensions": ["other-extension"],
+    "runtime": ["node >= 22"]
+  }
+}
+```
+
+**Registry system:** Persisted at `~/.gsd/extensions/registry.json`. Extensions without manifests always load (backwards compatible). A fresh install has an empty registry -- all extensions are enabled by default. The only way to stop an extension from loading is an explicit `gsd extensions disable <id>`. Core-tier extensions cannot be disabled.
+
+**Topological sort for load order:** After filtering disabled extensions via the registry, extension paths are sorted in topological dependency order using `sortExtensionPaths()`. Extensions declaring `dependencies.extensions` in their manifest are loaded after their dependencies. Circular or missing dependencies emit warnings but do not block loading.
+
+**`provides.hooks` matching:** The `provides.hooks` field in the manifest declares which event types the extension hooks into (e.g., `tool_call`, `input`, `context`). This metadata is surfaced in the `/gsd extensions list` output and used for introspection.
+
+**TypeScript syntax detection in `.js` files (v2.44.0):** The extension loader detects TypeScript syntax in `.js` extension files and suggests renaming to `.ts` for proper compilation support.
+
+**Pi manifest opt-out for discovery:** Directories containing a `package.json` with a `pi` manifest object use it authoritatively. If `pi.extensions` is an array, those entries are resolved as extension entry points. If `pi: {}` is declared with no extensions array, the directory is treated as a library opt-out (e.g., cmux) and no extensions are loaded from it. Only when no `pi` manifest exists does discovery fall back to `index.ts` / `index.js`.
 
 ---
 
@@ -293,37 +328,230 @@ main ----------------------------------------- main
 
 **Impact:** Reduces a 4-slice milestone from 30 sessions to 16 (47% reduction). Saves ~156-481K tokens per milestone. All eliminated unit types are retained as fallbacks for explicit dispatch.
 
+### ADR-004: Capability-Aware Model Routing
+
+**Status:** Proposed (Revised, 2026-03-26)
+
+**Related:** ADR-003 (pipeline simplification)
+
+**Problem:** The existing dynamic model router is fundamentally complexity-tier and cost based, not task-capability based. It optimizes for task difficulty vs model cost, when the real problem is task requirements vs model strengths. Three structural issues:
+
+1. **Wrong optimization target** -- the router selects the cheapest model in the eligible tier, ignoring that models within the same tier have different strengths (Claude excels at greenfield architecture, Codex at debugging/refactoring, Gemini at long-context synthesis).
+2. **Poor behavior with heterogeneous pools** -- different users have different subscriptions. A fixed mapping like "research always uses Gemini" does not generalize across varied provider configurations.
+3. **Capability knowledge trapped in user intuition** -- experienced users know which models perform better at coding, debugging, research, or instruction following. GSD has no representation for that knowledge.
+
+**Decision:** Extend dynamic routing from a one-dimensional tier system to a two-dimensional system combining complexity classification ("how hard") with capability scoring ("what kind"), while preserving downgrade-only semantics, budget controls, and user overrideability.
+
+**Design principles:**
+- Downgrade-only invariant preserved -- the user's configured model is always the ceiling
+- Complexity classification unchanged -- `classifyUnitComplexity()` still determines tier eligibility
+- Cost is a constraint, not a score dimension -- budget pressure limits eligibility, not capability profiles
+- Requirement vectors are dynamic -- computed from `(unitType, TaskMetadata)`, not from unit type alone
+
+**Revised selection pipeline:**
+
+```
+unit dispatch
+  -> classifyUnitComplexity(unitType, unitId, basePath, budgetPct)
+      [unchanged -- determines tier eligibility and budget filtering]
+  -> resolveModelForComplexity(classification, phaseConfig, routingConfig, availableModelIds)
+      -> STEP 1: filter to tier-eligible models (downgrade-only from user ceiling)
+      -> STEP 2: if capability routing enabled AND >1 eligible model:
+          -> computeTaskRequirements(unitType, taskMetadata)
+          -> scoreEligibleModels(eligible, taskRequirements)
+          -> select highest-scoring model (deterministic tie-break by cost, then ID)
+      -> STEP 3: assemble fallback chain
+  -> resolveModelId() -> pi.setModel()
+```
+
+Each model gains an optional capability profile with numeric scores (0.0-1.0) across dimensions like coding, debugging, research, long-context, and instruction-following. Task requirements are computed dynamically from unit type and `TaskMetadata` (file counts, dependency counts, tags, complexity keywords). The selection pipeline scores eligible models against the requirement vector and picks the best match.
+
+**Relationship to ADR-003:** ADR-003 reduced the number of dispatch units per milestone. ADR-004 makes each remaining unit smarter by routing to the most capable model for that specific kind of work, rather than defaulting to the cheapest in the tier.
+
 ---
 
-## VS Code Extension
+## VS Code Extension Development
 
-The VS Code extension (`gsd-2`) provides IDE integration for the GSD-2 coding agent.
+The VS Code extension (`gsd-2`) provides full IDE integration for the GSD-2 coding agent. It was built in a 3-phase rollout across v2.52.0 through v2.58.0.
 
 **Publisher:** FluxLabs
-**Version:** 0.1.0
+**Version:** 0.3.0
+**Engine requirement:** VS Code >= 1.95.0
 
-### Features
+### Phase 1 (v2.52.0): Foundation
 
-- **Sidebar dashboard** -- connection status, active model, thinking level, token usage, quick action buttons
-- **Chat integration** -- `@gsd` chat participant in VS Code Chat for sending messages to the agent
-- **15 commands** -- accessible via `Ctrl+Shift+P` (Start Agent, Stop Agent, New Session, Send Message, Abort, Steer, Switch Model, Cycle Model, Set Thinking, Cycle Thinking, Compact, Export HTML, Session Stats, Run Bash, List Commands)
-- **Keyboard shortcuts** -- `Cmd+Shift+G Cmd+Shift+N` (New Session), `Cmd+Shift+G Cmd+Shift+M` (Cycle Model), `Cmd+Shift+G Cmd+Shift+T` (Cycle Thinking)
+Introduced the core extension infrastructure:
+- **Status bar** -- connection status indicator in the VS Code status bar
+- **File decorations** -- "G" badge on agent-modified files in the Explorer
+- **Bash terminal** -- dedicated terminal for agent shell output
+- **Session tree** -- sidebar panel listing all past sessions for the current workspace, with click-to-switch
+- **Conversation history** -- full message viewer with tool calls, thinking blocks, search, and fork-from-here
+- **Code lens** -- inline actions above functions and classes (Ask GSD, Refactor, Find Bugs, Tests) for TS/JS/Python/Go/Rust
 
-### How It Works
+### Phase 2 (v2.53.0): Interactivity
 
-The extension spawns `gsd --mode rpc` in the background and communicates over JSON-RPC via stdin/stdout. All 25 RPC commands are supported, including streaming events for real-time sidebar updates.
+Added workflow and session management features:
+- **Activity feed** -- real-time log of every tool the agent executes (Read, Write, Edit, Bash, Grep, Glob) with status icons, duration, and click-to-open
+- **Workflow controls** -- one-click buttons (Auto, Next, Quick, Capture) routing through the Chat panel
+- **Session forking** -- fork from any previous message to create a new branch of conversation
+- **Enhanced code lens** -- expanded language coverage and action reliability
+
+### Phase 3 (v2.58.0): Change Management
+
+Completed the full change review and approval workflow:
+- **Change tracker** -- captures file state before modifications for SCM diffs and rollback
+- **Checkpoints** -- automatic checkpoints at the start of each agent turn for safe rollback
+- **Diagnostics** -- Fix Errors button reads active file diagnostics; Fix All Problems collects workspace-wide errors/warnings; chat auto-includes diagnostics when "fix" or "error" mentioned
+- **Git integration** -- Commit Agent Changes, Create Branch, Show Diff commands
+- **Line decorations** -- green background on added lines, yellow on modified lines, left border gutter indicator, hover tooltips
+- **Permissions** -- approval modes (auto-approve, ask, plan-only) controlling agent autonomy
+- **Plan viewer** -- visualization of agent planning state
+- **SCM provider** -- dedicated "GSD Agent" section in Source Control with per-file accept/discard, Accept All/Discard All, and native diff editor integration
+
+### Source Files
+
+| File | Role |
+|------|------|
+| `extension.ts` | Main entry point, activation, command registration |
+| `gsd-client.ts` | RPC client -- spawns `gsd --mode rpc`, manages JSON-RPC communication |
+| `sidebar.ts` | Sidebar dashboard -- connection status, model, tokens, workflow buttons, settings |
+| `chat-participant.ts` | `@gsd` chat participant in VS Code Chat with streaming, file/selection/diagnostic context |
+| `activity-feed.ts` | Real-time tool execution log with status icons and click-to-open |
+| `session-tree.ts` | Session list panel with click-to-switch and current session highlighting |
+| `conversation-history.ts` | Full message viewer with search, tool call display, and fork-from-here |
+| `code-lens.ts` | Inline actions (Ask, Refactor, Find Bugs, Tests) above functions/classes |
+| `change-tracker.ts` | Captures pre-modification file state for diff computation and rollback |
+| `checkpoints.ts` | Automatic per-turn checkpoints for safe rollback |
+| `scm-provider.ts` | Source Control integration -- GSD Agent group, per-file accept/discard |
+| `file-decorations.ts` | "G" badge on agent-modified files in Explorer |
+| `line-decorations.ts` | Green/yellow line backgrounds and gutter indicators on agent-touched lines |
+| `diagnostics.ts` | Reads VS Code Problems panel, sends diagnostics to agent |
+| `git-integration.ts` | Commit, branch, and diff commands for agent changes |
+| `permissions.ts` | Approval mode management (auto-approve / ask / plan-only) |
+| `plan-viewer.ts` | Agent planning state visualization |
+| `bash-terminal.ts` | Dedicated terminal instance for agent shell output |
+| `slash-completion.ts` | Auto-complete for `/gsd` slash commands |
 
 ### Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gsd.binaryPath` | `"gsd"` | Path to the GSD binary if not on PATH |
-| `gsd.autoStart` | `false` | Start the agent automatically on activation |
-| `gsd.autoCompaction` | `true` | Enable automatic context compaction |
+| `gsd.binaryPath` | `"gsd"` | Path to the GSD binary |
+| `gsd.autoStart` | `false` | Start agent on extension activation |
+| `gsd.autoCompaction` | `true` | Automatic context compaction |
+| `gsd.codeLens` | `true` | Code lens above functions/classes |
+| `gsd.showProgressNotifications` | `false` | Progress notification (off -- Chat shows progress) |
+| `gsd.activityFeedMaxItems` | `100` | Max items in Activity feed |
+| `gsd.showContextWarning` | `true` | Warn when context exceeds threshold |
+| `gsd.contextWarningThreshold` | `80` | Context % that triggers warning |
+| `gsd.approvalMode` | `"auto-approve"` | Agent permission mode |
 
-### Requirements
+### How It Works
 
-GSD must be installed: `npm install -g gsd-pi`. Node.js >= 20.6.0 and Git are required.
+The extension spawns `gsd --mode rpc` and communicates over JSON-RPC via stdin/stdout. Agent events stream in real-time. The change tracker captures file state before modifications for SCM diffs and rollback. UI requests from the agent (questions, confirmations) are handled via VS Code dialogs.
+
+---
+
+## Daemon and Discord Integration (v2.57.0+)
+
+The `packages/daemon` workspace package provides a long-running background service that manages headless GSD sessions and bridges them to Discord channels.
+
+### Architecture
+
+```
+DaemonConfig (YAML)
+  |
+  Daemon
+    +-- SessionManager      (manages ManagedSession lifecycle, RpcClient instances)
+    +-- DiscordBot           (discord.js Client, auth guard, slash commands)
+    +-- EventBridge          (RPC events -> channel messages via formatter + batcher)
+    +-- Orchestrator         (LLM-powered control channel agent with 5 tool definitions)
+    +-- ChannelManager       (per-project Discord text channels under "GSD Projects" category)
+```
+
+### DaemonConfig
+
+Top-level configuration loaded from YAML:
+
+```typescript
+interface DaemonConfig {
+  discord?: {
+    token: string;
+    guild_id: string;
+    owner_id: string;
+    dm_on_blocker?: boolean;
+    control_channel_id?: string;
+    orchestrator?: { model?: string; max_tokens?: number };
+  };
+  projects: { scan_roots: string[] };
+  log: { file: string; level: LogLevel; max_size_mb: number };
+}
+```
+
+### DiscordBot
+
+Wraps `discord.js` Client with login/destroy lifecycle and an auth guard. Auth model: single Discord user ID allowlist (`owner_id`). All non-owner interactions are silently ignored; rejections are logged at debug level (userId only, no PII). The `isAuthorized()` function fails closed on empty or missing ownerId.
+
+### Event Bridge
+
+Orchestrates the flow from SessionManager events through the formatter, verbosity filter, and message batcher into Discord channels. Handles:
+- Session lifecycle -- Discord channel creation and cleanup
+- Event streaming -- format + verbosity filter + batcher
+- Blocker resolution -- interactive buttons + text relay
+- Conversation relay -- Discord messages forwarded to GSD sessions
+- DM backup -- owner gets DM on blocker when `dm_on_blocker` is configured
+
+### Pure-Function Event Formatters
+
+10 exported formatter functions in `event-formatter.ts` mapping RPC event types to Discord embeds with a color palette (green=success, red=error, yellow=blocker, blue=info, grey=tool):
+
+| Function | Maps |
+|----------|------|
+| `formatToolStart` | Tool execution begin |
+| `formatToolEnd` | Tool execution completion |
+| `formatMessage` | Agent text messages |
+| `formatBlocker` | Blocker events requiring user input |
+| `formatCompletion` | Task/milestone completion |
+| `formatError` | Session errors |
+| `formatCostUpdate` | Cost/token tracking updates |
+| `formatSessionStarted` | Session start notification |
+| `formatTaskTransition` | Task state changes |
+| `formatGenericEvent` | Catch-all for unmapped event types |
+
+The top-level `formatEvent()` dispatches to the appropriate specific formatter based on event type.
+
+### Launchd Integration
+
+`launchd.ts` manages macOS service registration. Generates a `com.gsd.daemon.plist` file and provides `LaunchdStatus` queries (registered, PID, last exit status). Accepts `PlistOptions` for configuring Node.js binary path, script path, config path, working directory, and log paths.
+
+### Channel Manager
+
+`channel-manager.ts` manages per-project Discord text channels under a "GSD Projects" category with archive support. Project directory paths are sanitized into valid Discord channel names (lowercased, non-alphanumeric replaced with hyphens, prefixed with `gsd-`, capped at 100 characters).
+
+### Orchestrator
+
+`orchestrator.ts` is an LLM-powered agent for the `#gsd-control` Discord channel. It receives Discord messages, maintains conversation history, calls the Anthropic messages API with 5 tool definitions (`list_projects`, `start_session`, `get_status`, `stop_session`, `get_session_detail`), and sends the LLM's response back to Discord. Uses standard `messages.create()` tool-use loop with Zod schemas for input validation.
+
+### Source Files
+
+| File | Role |
+|------|------|
+| `types.ts` | All shared types -- DaemonConfig, ManagedSession, SessionStatus, PendingBlocker, CostAccumulator, ProjectInfo, FormattedEvent |
+| `daemon.ts` | Core daemon class -- config + logger + lifecycle, signal handlers, keepalive |
+| `discord-bot.ts` | Discord.js client wrapper with auth guard and slash commands |
+| `event-bridge.ts` | RPC event -> Discord channel message pipeline |
+| `event-formatter.ts` | Pure-function formatters (10 functions) mapping events to embeds |
+| `session-manager.ts` | Manages ManagedSession instances and RpcClient processes |
+| `channel-manager.ts` | Per-project Discord channel lifecycle and archival |
+| `orchestrator.ts` | LLM-powered control channel agent (5 tools) |
+| `launchd.ts` | macOS launchd plist generation and status queries |
+| `message-batcher.ts` | Batches Discord messages to respect rate limits |
+| `verbosity.ts` | Per-channel verbosity levels (default/verbose/quiet) |
+| `config.ts` | YAML config loading and validation |
+| `logger.ts` | JSON-lines structured logging |
+| `cli.ts` | CLI entry point for daemon process |
+| `project-scanner.ts` | Scans configured roots for GSD projects |
+| `index.ts` | Package barrel export |
 
 ---
 
@@ -356,6 +584,28 @@ pnpm run preview  # preview the production build
 
 ---
 
+## Testing Infrastructure
+
+### node:test Migration (v2.45.0)
+
+Starting with v2.45.0, all tests were migrated from the custom test harness (`createTestContext`) to Node.js built-in `node:test`. The migration was done in waves:
+
+- `src/tests` a-n and o-z: replaced `try/finally` with `t.after()` for cleanup
+- `gsd/tests` a-c, i-n, o-r, s-z: migrated from custom harness to `node:test`
+- `packages` tests: replaced `try/finally` with `beforeEach`/`afterEach`
+
+This removed the dependency on custom test utilities and aligned with the Node.js standard test runner.
+
+### esbuild Compilation for Unit Tests (v2.56.0)
+
+In v2.56.0, unit tests were switched to compile via esbuild rather than running TypeScript directly through the Node.js loader. This provides faster test startup and catches compilation errors earlier.
+
+### Integration Test Reclassification (v2.56.0)
+
+Also in v2.56.0, tests were reclassified: tests requiring filesystem setup, network access, or process spawning were moved from the unit test suite to the integration test suite. This fixed issues with `node_modules` symlinks in the unit test environment and made the unit test pass more reliable in CI.
+
+---
+
 ## How to Contribute
 
 ### Extension Development Workflow
@@ -374,6 +624,8 @@ pnpm run preview  # preview the production build
 | `@mariozechner/pi-tui` | Terminal UI framework, core components, keyboard handling |
 | `@mariozechner/pi-ai` | LLM provider abstraction, model registry, `StringEnum` utility |
 | `@mariozechner/pi-agent-core` | Agent loop, session management, message types |
+| `@gsd-build/rpc-client` | RPC protocol types, client for embedding GSD in editors/GUIs |
+| `packages/daemon` | Background daemon service with Discord integration |
 
 ### Development Guidelines
 

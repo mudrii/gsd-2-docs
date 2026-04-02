@@ -17,11 +17,12 @@ GSD preferences control model selection, timeout behavior, budget limits, verifi
 
 | Scope | Path | Applies To |
 |-------|------|-----------|
-| Global | `~/.gsd/preferences.md` | All projects |
+| Global | `~/.gsd/PREFERENCES.md` | All projects |
+| Global (legacy) | `~/.gsd/preferences.md` | All projects (fallback) |
 | Global (legacy) | `~/.pi/agent/gsd-preferences.md` | All projects (fallback) |
-| Project | `.gsd/preferences.md` | Current project only |
+| Project | `.gsd/PREFERENCES.md` | Current project only |
 
-GSD also checks uppercase variants (`PREFERENCES.md`) as a fallback for files created by an earlier bootstrap bug.
+The canonical filename was renamed from `preferences.md` to `PREFERENCES.md` in v2.52.0 for consistency with other uppercase GSD artifacts (`DECISIONS.md`, `KNOWLEDGE.md`, etc.). GSD still loads lowercase variants as a fallback, so existing files continue to work. New files created by the preferences wizard use the uppercase name.
 
 ### File Format
 
@@ -38,6 +39,17 @@ models:
 ```
 
 Only the YAML frontmatter block (between `---` delimiters) is parsed. Content after the closing `---` is ignored.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GSD_HOME` | `~/.gsd` | Override the global GSD directory. All paths derive from this unless individually overridden. Affects preferences, skills, sessions, and per-project state. (v2.39) |
+| `GSD_PROJECT_ID` | (auto-hash) | Override the automatic project identity hash. Per-project state goes to `$GSD_HOME/projects/<GSD_PROJECT_ID>/` instead of the computed hash. Useful for CI/CD or sharing state across clones of the same repo. (v2.39) |
+| `GSD_STATE_DIR` | `$GSD_HOME` | Per-project state root. Controls where `projects/<repo-hash>/` directories are created. Takes precedence over `GSD_HOME` for project state. |
+| `GSD_CODING_AGENT_DIR` | `$GSD_HOME/agent` | Agent directory containing managed resources, extensions, and auth. Takes precedence over `GSD_HOME` for agent paths. |
 
 ---
 
@@ -65,10 +77,10 @@ Only the YAML frontmatter block (between `---` delimiters) is parsed. Content af
 
 Set via `mode` preference or `/gsd mode` command.
 
-| Mode | `git.auto_push` | `git.push_branches` | `git.pre_merge_check` | `unique_milestone_ids` |
-|------|:---------------:|:-------------------:|:--------------------:|:---------------------:|
-| `solo` | true | false | false | false |
-| `team` | false | true | true | true |
+| Mode | `git.auto_push` | `git.push_branches` | `git.pre_merge_check` | `unique_milestone_ids` | `git.isolation` |
+|------|:---------------:|:-------------------:|:--------------------:|:---------------------:|:---------------:|
+| `solo` | true | false | `"auto"` | false | `"none"` |
+| `team` | false | true | true | true | `"none"` |
 
 Mode defaults are the lowest-priority layer -- any explicit user value overrides them.
 
@@ -94,9 +106,11 @@ Per-phase model selection. Each key accepts a model string or an object with fal
 |-----------|-------------------|
 | `research` | `research-milestone`, `research-slice` |
 | `planning` | `plan-milestone`, `plan-slice`, `replan-slice` |
+| `discuss` | `discuss-milestone`, `discuss-slice` |
 | `execution` | `execute-task` |
 | `execution_simple` | `execute-task` when classified as simple by complexity router |
 | `completion` | `complete-slice`, `complete-milestone`, `reassess-roadmap`, `run-uat`, `validate-milestone` |
+| `validation` | `validate-milestone` |
 | `subagent` | Delegated subagent tasks (scout, researcher, worker) |
 
 **Simple string format:**
@@ -125,6 +139,8 @@ When a model fails to switch (provider unavailable, rate limited, credits exhaus
 **Provider targeting:** Use `provider/model` format (e.g., `bedrock/claude-sonnet-4-6`) or the `provider` field in object format.
 
 Omitting a key causes that phase to use whatever model is currently active.
+
+**Dynamic routing without `models` section (v2.55.0):** When `dynamic_routing.enabled` is true, the router works even if no `models` section is defined. It uses the currently active model as the ceiling and applies tier-based or capability-aware downgrading from there.
 
 ### `token_profile`
 
@@ -204,6 +220,16 @@ Context window usage percentage (0-100) at which auto mode pauses. Default: `0` 
 context_pause_threshold: 80
 ```
 
+### `show_token_cost` (v2.44.0)
+
+Opt-in: show per-prompt and cumulative session token cost in the footer.
+
+```yaml
+show_token_cost: true    # default: false
+```
+
+When enabled, each prompt response displays the token cost for that turn and a running total for the session.
+
 ### `verification_commands`
 
 Shell commands that run automatically after every task execution.
@@ -228,13 +254,25 @@ When true (default), verification failures trigger auto-fix retries. The agent s
 
 Maximum auto-fix retry attempts. Default: `2`.
 
+### `search_provider` (v2.29.0)
+
+Search provider preference for web search during research phases.
+
+| Value | Behavior |
+|-------|----------|
+| `"auto"` | Default behavior (native for Anthropic, Brave/Tavily for others) |
+| `"brave"` | Force Brave Search backend |
+| `"tavily"` | Force Tavily Search backend |
+| `"ollama"` | Use Ollama for search |
+| `"native"` | Force native Anthropic search only |
+
 ### `git`
 
 Git behavior configuration. All fields optional.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `isolation` | string | `"worktree"` | Auto-mode isolation strategy |
+| `isolation` | string | `"none"` | Auto-mode isolation strategy (changed from `"worktree"` in v2.46.0) |
 | `auto_push` | boolean | `false` | Push commits to remote after committing |
 | `push_branches` | boolean | `false` | Push milestone branch to remote |
 | `remote` | string | `"origin"` | Git remote name |
@@ -246,18 +284,43 @@ Git behavior configuration. All fields optional.
 | `commit_docs` | boolean | `true` | Commit `.gsd/` artifacts to git |
 | `manage_gitignore` | boolean | `true` | When false, GSD will not modify `.gitignore` |
 | `worktree_post_create` | string | (none) | Script to run after worktree creation |
-| `auto_pr` | boolean | `false` | Create PR on milestone completion (requires `gh` CLI) |
+| `auto_pr` | boolean | `false` | Create PR on milestone completion (v2.39.0; requires `gh` CLI) |
 | `pr_target_branch` | string | (main branch) | Target branch for auto-created PRs |
 
 #### Git Isolation Modes
 
 | Mode | Description |
 |------|-------------|
-| `worktree` (default) | Each milestone runs in `.gsd/worktrees/<MID>/` on a `milestone/<MID>` branch. Squash-merged to main on completion. |
+| `none` (default since v2.46.0) | Work directly on current branch. No worktree or milestone branch. For hot-reload workflows. |
+| `worktree` | Each milestone runs in `.gsd/worktrees/<MID>/` on a `milestone/<MID>` branch. Squash-merged to main on completion. |
 | `branch` | Work in project root on a `milestone/<MID>` branch. Useful for submodule-heavy repos. |
-| `none` | Work directly on current branch. No worktree or milestone branch. For hot-reload workflows. |
+
+The default isolation mode was changed from `worktree` to `none` in v2.46.0. If worktree creation fails at runtime (e.g., filesystem limitations, git submodule issues), GSD automatically downgrades to `none` isolation rather than aborting (v2.50.0).
 
 Isolation mode is resolved by `getIsolationMode()` in `preferences.ts`.
+
+#### `git.auto_pr` (v2.39.0)
+
+Automatically create a pull request when a milestone completes. Designed for teams using Gitflow or branch-based workflows where work should go through PR review before merging to a target branch.
+
+```yaml
+git:
+  auto_push: true
+  auto_pr: true
+  pr_target_branch: develop
+```
+
+**Requirements:**
+- `auto_push: true` -- the milestone branch must be pushed before a PR can be created
+- [`gh` CLI](https://cli.github.com/) installed and authenticated (`gh auth login`)
+
+**How it works:**
+1. Milestone completes -> GSD squash-merges the worktree to the main branch
+2. Pushes the main branch to remote (if `auto_push: true`)
+3. Pushes the milestone branch to remote
+4. Creates a PR from the milestone branch to `pr_target_branch` via `gh pr create`
+
+If `pr_target_branch` is not set, the PR targets the `main_branch` (or auto-detected main branch). PR creation failure is non-fatal -- GSD logs and continues.
 
 #### Worktree Post-Create Hook
 
@@ -285,6 +348,8 @@ Complexity-based model routing. When enabled, auto mode selects cheaper models f
 
 **Downgrade-only semantics:** the router never upgrades beyond the user's configured model. It can only select equal or cheaper alternatives.
 
+**Dynamic routing without `models` (v2.55.0):** You can enable `dynamic_routing.enabled: true` without defining a `models` section. The router uses the currently active model as the ceiling and downgrades from there based on complexity classification.
+
 Known model tier assignments (from `model-router.ts`):
 
 | Tier | Models |
@@ -292,6 +357,65 @@ Known model tier assignments (from `model-router.ts`):
 | Light | claude-haiku-4-5, gpt-4o-mini, gemini-2.0-flash |
 | Standard | claude-sonnet-4-6, gpt-4o, gemini-2.5-pro, deepseek-chat |
 | Heavy | claude-opus-4-6, o1, o3 |
+
+#### Capability-Aware Model Routing (ADR-004)
+
+Starting with v2.52.0, the model routing architecture is evolving from a pure cost/tier approach to a **capability-aware** two-dimensional system that combines complexity classification ("how hard") with capability scoring ("what kind"). This is defined in ADR-004 and is being rolled out in phases.
+
+**Key concepts:**
+
+- Each model gains an optional **capability profile** with seven dimensions: `coding`, `debugging`, `research`, `reasoning`, `speed`, `longContext`, `instruction` (scores 0-100).
+- Each dispatched unit gets a **task requirement vector** computed from `(unitType, TaskMetadata)`, not just unit type alone.
+- The router filters to tier-eligible models (downgrade-only), then ranks by capability score when multiple models are eligible.
+- Models without capability profiles receive uniform scores (50 in each dimension), falling back to cheapest-in-tier behavior.
+- All existing invariants are preserved: downgrade-only semantics, budget pressure, retry escalation, fallback chains.
+
+**Provider registry (`models.custom.ts`):** Models from providers not tracked by the auto-generated models.dev catalog are defined in `packages/pi-ai/src/models.custom.ts`. This includes Alibaba Coding Plan models (Qwen, GLM, Kimi K2.5, MiniMax M2.5) and Z.AI models. GLM-5.1 was added to the Z.AI provider in v2.57.0.
+
+**Unit type mapping for discuss dispatches (v2.57.0):** The model router now uses honest `unitTypes` for `discuss-milestone` and `discuss-slice` dispatches instead of aliasing them to planning unit types. This ensures discuss phases resolve to the correct model phase when per-phase models are configured.
+
+**Non-API-key provider support (v2.44.0):** GSD supports provider extensions that do not use traditional API keys, such as the Claude Code CLI provider. These providers implement their own authentication flow (e.g., OAuth, CLI token) and are surfaced in the model picker alongside standard providers.
+
+Users can override capability profiles in `models.json`:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "modelOverrides": {
+        "claude-sonnet-4-6": {
+          "capabilities": {
+            "debugging": 90,
+            "research": 85
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### `service_tier` (v2.42.0)
+
+OpenAI service tier preference for supported models. Toggle with `/gsd fast`.
+
+| Value | Behavior |
+|-------|----------|
+| `"priority"` | Priority tier -- 2x cost, faster responses |
+| `"flex"` | Flex tier -- 0.5x cost, slower responses |
+| (unset) | Default tier |
+
+```yaml
+service_tier: priority
+```
+
+### `forensics_dedup` (v2.43.0)
+
+Opt-in: search existing issues and PRs before filing from `/gsd forensics`. Uses additional AI tokens.
+
+```yaml
+forensics_dedup: true    # default: false
+```
 
 ### `uat_dispatch`
 
@@ -342,7 +466,7 @@ Route interactive questions to Slack/Discord/Telegram for headless auto mode.
 
 ### `always_use_skills` / `prefer_skills` / `avoid_skills`
 
-Skill routing preferences. Skills can be bare names (looked up in `~/.gsd/agent/skills/`) or absolute paths.
+Skill routing preferences. Skills can be bare names (looked up in `~/.agents/skills/` and `.agents/skills/`) or absolute paths.
 
 ```yaml
 always_use_skills:
@@ -385,7 +509,7 @@ Custom hooks that fire after specific unit types complete.
 | `name` | string | -- | Unique hook identifier |
 | `after` | string[] | -- | Unit types that trigger this hook |
 | `prompt` | string | -- | Prompt sent to the LLM session |
-| `model` | string | (active) | Optional model override |
+| `model` | string | (active) | Optional model override (uses model-router resolution since v2.41.0) |
 | `max_cycles` | number | `1` | Max fires per trigger (1-10) |
 | `artifact` | string | -- | Skip if this file exists (idempotency) |
 | `retry_on` | string | -- | If produced, re-run trigger unit then re-run hooks |
@@ -395,6 +519,10 @@ Custom hooks that fire after specific unit types complete.
 Prompt substitutions: `{milestoneId}`, `{sliceId}`, `{taskId}`.
 
 Known unit types for `after`: `research-milestone`, `plan-milestone`, `research-slice`, `plan-slice`, `execute-task`, `complete-slice`, `replan-slice`, `reassess-roadmap`, `run-uat`, `complete-milestone`.
+
+**Hook model resolution (v2.41.0):** The `model` field on hooks now uses the same model-router resolution as regular dispatches, instead of being limited to the Claude-only registry. This means hook models can reference any configured provider (e.g., `openrouter/deepseek/deepseek-r1`).
+
+**Workflow-logger integration (v2.46.0):** Hook execution events are recorded in the workflow logger alongside engine, tool, manifest, and reconcile paths. This provides a unified audit trail for all state transitions, including hook-triggered ones.
 
 ### `pre_dispatch_hooks`
 
@@ -410,7 +538,7 @@ Hooks that intercept units before dispatch.
 | `prompt` | string | -- | Replacement prompt (replace action) |
 | `unit_type` | string | -- | Override unit type label (replace action) |
 | `skip_if` | string | -- | Only skip if this file exists (skip action) |
-| `model` | string | (active) | Optional model override |
+| `model` | string | (active) | Optional model override (uses model-router resolution since v2.41.0) |
 | `enabled` | boolean | `true` | Disable without removing |
 
 ### `parallel`
@@ -425,17 +553,45 @@ Run multiple milestones simultaneously.
 | `merge_strategy` | string | `"per-milestone"` | `"per-slice"` or `"per-milestone"` |
 | `auto_merge` | string | `"confirm"` | `"auto"`, `"confirm"`, or `"manual"` |
 
-### `search_provider`
+### `github` (v2.39.0)
 
-Search provider preference for web search during research phases.
+GitHub sync configuration. When enabled, GSD auto-syncs milestones, slices, and tasks to GitHub Issues, PRs, and Milestones.
 
-| Value | Behavior |
-|-------|----------|
-| `"auto"` | Default behavior (native for Anthropic, Brave/Tavily for others) |
-| `"brave"` | Force Brave Search backend |
-| `"tavily"` | Force Tavily Search backend |
-| `"ollama"` | Use Ollama for search |
-| `"native"` | Force native Anthropic search only |
+```yaml
+github:
+  enabled: true
+  repo: "owner/repo"
+  labels: [gsd, auto-generated]
+  project: "Project ID"
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable GitHub sync |
+| `repo` | string | (auto-detected) | GitHub repository in `owner/repo` format |
+| `labels` | string[] | `[]` | Labels to apply to created issues and PRs |
+| `project` | string | (none) | GitHub Project ID for project board integration |
+
+Requires `gh` CLI installed and authenticated. Sync mapping is persisted in `.gsd/.github-sync.json`.
+
+### `experimental`
+
+Opt-in experimental features. All features in this block are disabled by default and may change or be removed without a deprecation cycle.
+
+#### `experimental.rtk` (v2.51.0)
+
+Enable managed RTK (Real-Time Kompression) shell-command compression. When enabled, GSD wraps shell commands through the RTK binary to reduce token usage during command execution. The RTK binary is auto-managed in `~/.gsd/bin/`.
+
+```yaml
+experimental:
+  rtk: true    # default: false
+```
+
+The web UI also exposes an RTK toggle when this preference is enabled, showing RTK session savings in the auto-mode dashboard.
+
+### `stale_commit_threshold_minutes`
+
+Minutes without a commit before flagging uncommitted changes as stale. When the threshold is exceeded and the working tree is dirty, doctor will auto-commit a safety snapshot. Default: `30`. Set `0` to disable.
 
 ### `compression_strategy`
 
@@ -459,6 +615,36 @@ Default derived from token profile.
 
 ---
 
+## TUI Settings (Non-Preference)
+
+These settings are managed through the interactive settings selector (`/settings`) and stored in `~/.gsd/settings.json`, separate from YAML preferences. They control editor behavior rather than auto-mode orchestration.
+
+### `searchExcludeDirs` (v2.29.0)
+
+Directories to exclude from the `@` file autocomplete search. Useful for filtering large directories like `node_modules`, `.git`, `dist`, or vendor directories from the file picker.
+
+```json
+{
+  "searchExcludeDirs": ["node_modules", ".git", "dist", "vendor"]
+}
+```
+
+### `respectGitignoreInPicker` (v2.29.0)
+
+When true (default), the `@` file picker respects `.gitignore` rules and hides gitignored files. Set to false to show all files regardless of gitignore status.
+
+```json
+{
+  "respectGitignoreInPicker": true
+}
+```
+
+### `retentionDays`
+
+Controls how long activity log files are retained. On Windows, `retentionDays=0` is handled specially: it deletes all log files except the current highest-sequence one, rather than treating 0 as "delete everything" (v2.45.0 fix).
+
+---
+
 ## Agent Instructions File
 
 Separate from preferences, GSD loads "always follow" instructions from:
@@ -476,6 +662,8 @@ Define custom models in `~/.gsd/agent/models.json`. Resolution order:
 1. `~/.gsd/agent/models.json` (primary)
 2. `~/.pi/agent/models.json` (fallback)
 3. If neither exists, creates `~/.gsd/agent/models.json`
+
+For providers not tracked by the auto-generated registry, model definitions are maintained in `packages/pi-ai/src/models.custom.ts`. This file is the provider registry for custom endpoints (Alibaba Coding Plan, Z.AI) that use proprietary API endpoints not listed on models.dev. The v2.52.0 release replaced model-ID pattern matching with capability metadata for provider resolution, using this registry.
 
 ---
 
@@ -511,11 +699,13 @@ The canonical set (from `KNOWN_PREFERENCE_KEYS`):
 version, mode, always_use_skills, prefer_skills, avoid_skills, skill_rules,
 custom_instructions, models, skill_discovery, skill_staleness_days,
 auto_supervisor, uat_dispatch, unique_milestone_ids, budget_ceiling,
-budget_enforcement, context_pause_threshold, notifications, remote_questions,
-git, post_unit_hooks, pre_dispatch_hooks, dynamic_routing, token_profile,
-phases, auto_visualize, auto_report, parallel, verification_commands,
-verification_auto_fix, verification_max_retries, search_provider,
-compression_strategy, context_selection
+budget_enforcement, context_pause_threshold, notifications, cmux,
+remote_questions, git, post_unit_hooks, pre_dispatch_hooks, dynamic_routing,
+token_profile, phases, auto_visualize, auto_report, parallel,
+verification_commands, verification_auto_fix, verification_max_retries,
+search_provider, context_selection, widget_mode, reactive_execution,
+gate_evaluation, github, service_tier, forensics_dedup, show_token_cost,
+stale_commit_threshold_minutes, experimental
 ```
 
 ---
@@ -525,12 +715,13 @@ compression_strategy, context_selection
 | Command | Description |
 |---------|-------------|
 | `/gsd prefs` | Open global preferences wizard |
-| `/gsd prefs global` | Interactive wizard for `~/.gsd/preferences.md` |
-| `/gsd prefs project` | Interactive wizard for `.gsd/preferences.md` |
+| `/gsd prefs global` | Interactive wizard for `~/.gsd/PREFERENCES.md` |
+| `/gsd prefs project` | Interactive wizard for `.gsd/PREFERENCES.md` |
 | `/gsd prefs status` | Show current files, merged values, skill resolution |
 | `/gsd prefs import-claude` | Import Claude marketplace plugins as GSD components |
 | `/gsd mode` | Switch workflow mode (solo/team) |
 | `/gsd config` | Tool API key configuration wizard |
+| `/gsd fast` | Toggle OpenAI service tier (priority/flex) |
 
 ---
 
@@ -578,8 +769,10 @@ auto_supervisor:
 git:
   auto_push: true
   merge_strategy: squash
-  isolation: worktree
+  isolation: none
   commit_docs: true
+  auto_pr: true
+  pr_target_branch: develop
 
 # Verification
 verification_commands:
@@ -600,6 +793,20 @@ skill_rules:
 notifications:
   on_complete: false
   on_milestone: true
+
+# Visualizer
+auto_visualize: true
+
+# Service tier
+service_tier: priority
+
+# Diagnostics
+forensics_dedup: true
+show_token_cost: true
+
+# Experimental
+experimental:
+  rtk: true
 
 # Hooks
 post_unit_hooks:

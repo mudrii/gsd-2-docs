@@ -4,9 +4,11 @@
 
 Auto mode is GSD's autonomous execution engine. It reads `.gsd/` state from disk, determines the next unit of work, creates a fresh agent session with a focused prompt, lets the LLM execute, then reads disk state again and dispatches the next unit. The loop runs until all milestones are complete, a budget ceiling is hit, or the user intervenes.
 
-Entry point: `/gsd auto` (autonomous) or `/gsd next` (step mode -- one unit at a time with pause between each).
+Entry point: `/gsd auto` (autonomous) or `/gsd next` (step mode -- one unit at a time with pause between each). The `--yolo` flag (v2.49.0) allows non-interactive project initialization, skipping the guided setup wizard when launching auto mode on an uninitialized project.
 
 All mutable auto-mode state lives in the `AutoSession` class (`auto/session.ts`). The single module-level instance `s` is the only mutable binding. This invariant is enforced by tests.
+
+`startAuto()` has a concurrent invocation guard (v2.58.0) that rejects overlapping calls, preventing subtle state corruption when multiple code paths attempt to start the auto loop simultaneously.
 
 ---
 
@@ -35,6 +37,7 @@ GSDState {
 | `pre-planning` | Active milestone has no roadmap yet |
 | `needs-discussion` | Milestone has CONTEXT-DRAFT.md but no CONTEXT.md |
 | `planning` | Slice needs a plan (no S##-PLAN.md) |
+| `evaluating-gates` | Quality gates are being evaluated in parallel (v2.50.0) |
 | `executing` | Active task exists in the slice plan |
 | `summarizing` | All tasks done but slice not marked complete in roadmap |
 | `replanning-slice` | A completed task set `blocker_discovered: true` and no REPLAN.md exists |
@@ -79,11 +82,10 @@ The dispatch table is a declarative array of rules (`DISPATCH_RULES`). Each rule
 | uat-verdict-gate | Any (failed UAT blocks) | stop |
 | run-uat (post-completion) | Any (completed slice needs UAT) | `run-uat` |
 | reassess-roadmap | Any (opt-in: `reassess_after_slice`) | `reassess-roadmap` |
-| needs-discussion | `needs-discussion` | stop |
+| needs-discussion | `needs-discussion` | dispatch to interactive flow |
 | pre-planning (no context) | `pre-planning`, no CONTEXT.md | stop |
-| pre-planning (no research) | `pre-planning`, no RESEARCH.md | `research-milestone` |
-| pre-planning (has research) | `pre-planning` | `plan-milestone` |
-| planning (no research, not S01) | `planning`, no slice RESEARCH.md | `research-slice` |
+| pre-planning (has context) | `pre-planning` | `plan-milestone` |
+| evaluating-gates | `evaluating-gates` | parallel gate evaluation |
 | planning | `planning` | `plan-slice` |
 | replanning-slice | `replanning-slice` | `replan-slice` |
 | executing (missing task plan) | `executing`, no task PLAN file | `plan-slice` (recovery) |
@@ -93,38 +95,67 @@ The dispatch table is a declarative array of rules (`DISPATCH_RULES`). Each rule
 
 If no rule matches, auto mode stops with "Unhandled phase."
 
+**needs-discussion routing (v2.41.0, backported to v2.29.0):** Instead of hard-stopping auto mode, the `needs-discussion` phase now dispatches to `showSmartEntry`, routing the user into an interactive discussion flow. This prevents infinite `/gsd` loops when a milestone has a CONTEXT-DRAFT but no finalized CONTEXT.
+
+**Dispatch guard dependency awareness (v2.41.0):** The dispatch guard uses explicit dependency declarations (`depends_on` in CONTEXT.md / CONTEXT-DRAFT.md) instead of positional ordering to determine milestone eligibility. Completed milestones with a SUMMARY file are always skipped. This allows non-linear milestone execution when dependencies permit.
+
+**Hallucination guard (v2.41.0):** After `execute-task` completes, the dispatch pipeline rejects units that produced zero tool calls, classifying them as hallucinated execution. This prevents the LLM from claiming task completion without actually performing any work.
+
+**Merge anchor verification (v2.41.0):** Before worktree teardown, GSD verifies that the merge target (main branch) is anchored correctly. This prevents data loss when the worktree branch has diverged in ways that would make the squash merge silently discard commits.
+
+### Pipeline Simplification (ADR-003, v2.30.0)
+
+ADR-003 introduced three structural changes to the dispatch pipeline:
+
+1. **Research merged into planning:** Separate `research-milestone` and `research-slice` phases were eliminated. Research is now folded into the planning phase prompts. The dispatch rules for `pre-planning (no research)` and `planning (no research, not S01)` no longer exist; planning units handle research inline.
+
+2. **Mechanical completion:** Slice and milestone completion units use streamlined prompts that focus on artifact generation (summaries, validation verdicts) without re-analyzing code.
+
+3. **Workflow templates:** Right-sized workflows are selected at project init based on task type (e.g., bug fix, feature, refactor). Templates control which phases run and which are skipped, replacing the per-phase skip preferences.
+
+### Quality Gates (v2.50.0)
+
+Planning and completion templates now include an 8-question quality gate evaluation. When a planning or completion unit finishes, the gate questions are evaluated in parallel (the `evaluating-gates` phase). Gate failures block progression and feed structured feedback into a retry prompt.
+
 ### Phase Skip Behavior by Token Profile
 
 | Phase | `budget` | `balanced` | `quality` |
 |-------|----------|------------|-----------|
-| Milestone Research | Skipped | Runs | Runs |
-| Slice Research | Skipped | Skipped | Runs |
+| Milestone Research | Merged into planning | Merged into planning | Merged into planning |
+| Slice Research | Merged into planning | Merged into planning | Merged into planning |
 | Reassess Roadmap | Opt-in only (`reassess_after_slice`) | Opt-in only | Opt-in only |
 | Milestone Validation | Runs | Runs | Runs |
 
-Research skipping is controlled by `prefs.phases.skip_research` and `prefs.phases.skip_slice_research`.
+### Git Trailers for Metadata (v2.49.0)
+
+GSD moved commit metadata from the subject line (e.g., `[M001/S01]`) to git trailers. Commits now use clean subject lines with structured trailers like `GSD-Milestone: M001` and `GSD-Slice: S01`. This avoids polluting commit history and allows standard git tooling to parse metadata.
+
+### Auto-Commit on Milestone Completion (v2.49.0-v2.57.0)
+
+After `complete-milestone`, GSD auto-commits the milestone summary and related artifacts. This was introduced progressively: first for individual slice phases (v2.44.0), then unified for milestone completion (v2.49.0), and stabilized in v2.57.0.
 
 ---
 
 ## Phase Lifecycle
 
-The typical flow for a single milestone:
+The typical flow for a single milestone (post-ADR-003):
 
 ```
 pre-planning
   |
-  +-- research-milestone (if not skipped)
-  +-- plan-milestone --> creates ROADMAP.md
+  +-- plan-milestone --> creates ROADMAP.md (research folded in)
+  |   +-- [quality gates evaluate]
   |
 planning (per slice)
   |
-  +-- research-slice (if not skipped, not S01 with milestone research)
-  +-- plan-slice --> creates S##-PLAN.md + task plans
+  +-- plan-slice --> creates S##-PLAN.md + task plans (research folded in)
+  |   +-- [quality gates evaluate]
   |
 executing (per task)
   |
   +-- execute-task --> marks task done in plan, commits code
   |   +-- [verification gate runs after each execute-task]
+  |   +-- [hallucination guard: reject zero-tool-call units]
   |   +-- [post-unit hooks fire if configured]
   |
 summarizing (all tasks done)
@@ -138,10 +169,13 @@ summarizing (all tasks done)
 validating-milestone
   |
   +-- validate-milestone --> writes VALIDATION.md with verdict
+  |   +-- [verification class compliance check (v2.51.0)]
   |
 completing-milestone
   |
   +-- complete-milestone --> writes milestone SUMMARY.md
+  |   +-- [auto-commit artifacts]
+  |   +-- [merge anchor verification before worktree teardown]
   |
   (next milestone... or "All milestones complete")
 ```
@@ -200,6 +234,26 @@ For retry scenarios (unit dispatched twice), `getDeepDiagnostic()` provides a di
 
 When running `gsd headless auto`, crashes trigger automatic restart with exponential backoff (5s, 10s, 30s cap, default 3 attempts). SIGINT/SIGTERM bypasses restart. Configure with `--max-restarts N`.
 
+### Signal Handlers and Lock Cleanup (v2.41.0)
+
+SIGHUP and SIGINT handlers are registered to clean up lock files on crash. This prevents stale locks from blocking subsequent auto-mode launches. The handlers complement the existing `process.once("exit")` cleanup.
+
+### Self-Heal Runtime Records (v2.41.0)
+
+Before entering the auto loop, `selfHealRuntimeRecords()` clears orphaned "dispatched" records that were never completed (e.g., from a crash mid-unit). This prevents the dispatch pipeline from misinterpreting stale records as in-progress work.
+
+### Closeout on Pause, Heal on Resume (v2.41.0)
+
+When auto mode pauses, the current unit is properly closed out (artifacts flushed, metrics recorded). On resume, runtime records are healed before re-entering the loop, ensuring clean state.
+
+### Infrastructure Error Halt (v2.41.0)
+
+Auto mode stops immediately on infrastructure errors (`ENOSPC`, `ENOMEM`, `EAGAIN`) instead of burning budget on retries that cannot succeed. These are tagged as `infraError` and bypass the normal retry/escalation path.
+
+### DB Reconciliation for Stale Task Status (v2.50.0)
+
+Before state derivation, GSD reconciles stale task status between the filesystem and the SQLite database. Tasks marked as "dispatched" in the DB but completed on disk are corrected, and vice versa. This prevents ghost tasks from blocking slice progression after crashes.
+
 ---
 
 ## Session Lock (OS-Level Exclusion)
@@ -236,7 +290,11 @@ A `process.once("exit")` handler ensures locks are cleaned up on normal exit.
 
 **File:** `src/resources/extensions/gsd/auto-stuck-detection.ts`
 
-If the same unit is dispatched twice (the LLM did not produce the expected artifact), GSD applies escalating recovery:
+### Sliding-Window Detection (v2.39.0)
+
+The original stuck counter was replaced with a sliding-window approach. Instead of a simple dispatch count per unit, GSD tracks a rolling window of recent dispatch outcomes. This reduces false positives from legitimate retries (e.g., verification fix cycles) while still catching genuine infinite loops.
+
+If the same unit is dispatched repeatedly without progress, GSD applies escalating recovery:
 
 1. **First retry**: Dispatches with a deep diagnostic prompt (what went wrong in the previous attempt).
 2. **Second retry**: If still stuck, auto mode stops with the exact file path it expected.
@@ -365,6 +423,10 @@ After every `execute-task` unit, the verification gate discovers and runs shell 
 - Infrastructure errors (ETIMEDOUT, ENOENT, ENOMEM) are tagged as `infraError` and do not trigger auto-fix retries.
 - Gate passes when all blocking checks exit 0.
 
+### Wider Operational Regex (v2.58.0)
+
+The verification gate regex that identifies operational commands was broadened to match additional patterns, reducing false negatives where legitimate verification commands were not recognized.
+
 ### Auto-Fix Retries
 
 When `verification_auto_fix` is true (default) and verification fails:
@@ -373,6 +435,22 @@ When `verification_auto_fix` is true (default) and verification fails:
 2. The same `execute-task` unit is re-dispatched with the verification failure context.
 3. Up to `verification_max_retries` (default: 2) retry attempts.
 4. If retries are exhausted, auto mode pauses.
+
+### Non-Blocking Gate for Auto-Discovered Commands (v2.29.0)
+
+When verification commands are auto-discovered from `package.json` scripts (source 3), failures are treated as advisory rather than blocking. This prevents auto-mode from stalling on pre-existing lint warnings or flaky tests that the current task did not introduce.
+
+### Verification Classes and Milestone Validation (v2.51.0)
+
+Verification classes (e.g., `unit-test`, `integration-test`, `type-check`, `lint`) are injected into milestone validation prompts. Before milestone completion, GSD checks verification class compliance -- each declared class must have passing evidence from the slice verification runs. This ensures milestones cannot complete without satisfying the project's declared verification contract.
+
+### followUps and knownLimitations Extraction (v2.51.0)
+
+`parseSummary()` now extracts `followUps` and `knownLimitations` sections from slice and milestone summaries. These are surfaced in the milestone validation prompt, giving the validator awareness of acknowledged gaps and deferred work.
+
+### Reactive Batch Verification + Dependency-Based Carry-Forward (v2.38.0)
+
+ADR-004 introduced reactive batch verification. Instead of running all verification commands after every task, GSD tracks which files each task modified and only runs verification commands whose input files were affected. Verification results carry forward across tasks based on dependency declarations -- if Task 3's verification passed and Task 4 did not touch any of Task 3's files, Task 3's results are carried forward without re-running.
 
 ### Runtime Error Capture
 
@@ -402,7 +480,20 @@ GSD classifies provider errors and auto-resumes when safe:
 |-----------|----------|--------|
 | Rate limit | 429, "too many requests" | Auto-resume after retry-after header or 60s |
 | Server error | 500, 502, 503, "overloaded" | Auto-resume after 30s |
+| Transient | Stream truncation, terminated/connection errors | Auto-resume with backoff |
 | Permanent | "unauthorized", "invalid key" | Pause indefinitely |
+
+### Transient Error Classification (v2.29.0-v2.51.0)
+
+Auto-resume now covers transient server errors beyond rate limits (v2.29.0). The error classifier recognizes:
+- **Stream truncation:** JSON parse errors from prematurely closed streams (v2.51.0)
+- **Terminated/connection errors:** Network disconnects and connection resets (v2.45.0)
+
+These are classified as transient and trigger auto-resume with backoff rather than permanent pause.
+
+### Rate-Limit Model Fallback (v2.53.0)
+
+When a rate-limit error occurs, GSD first attempts model fallback before pausing. If the current model's fallback chain has alternatives available, the next model is tried immediately. Only when no fallbacks remain does the standard rate-limit pause engage.
 
 ### Escalating Backoff
 
@@ -503,6 +594,7 @@ On each unit completion and session shutdown, `saveActivityLog()` persists a rec
 | Mechanism | Purpose |
 |-----------|---------|
 | Session lock | Prevent concurrent auto-mode on same project |
+| Concurrent startAuto() guard (v2.58.0) | Reject overlapping startAuto() calls |
 | Dispatch reentrancy guard | Prevent concurrent dispatch calls |
 | Skip depth guard | Yield to UI after MAX_SKIP_DEPTH skipped units |
 | Resource version guard | Stop if extension files changed during session |
@@ -510,6 +602,13 @@ On each unit completion and session shutdown, `saveActivityLog()` persists a rec
 | Context pause threshold | Pause before context window overflows |
 | Dispatch gap watchdog | Recover from silent dispatch chain breaks |
 | Dispatch hang guard | Recover from newSession() hangs |
+| Hallucination guard (v2.41.0) | Reject execute-task with zero tool calls |
+| Merge anchor verification (v2.41.0) | Verify merge target before worktree teardown |
+| Infrastructure error halt (v2.41.0) | Stop immediately on ENOSPC/ENOMEM/EAGAIN |
+| Quality gates (v2.50.0) | 8-question evaluation at planning and completion |
+| Verification class compliance (v2.51.0) | Block milestone completion without passing evidence |
+| Sliding-window stuck detection (v2.39.0) | Catch infinite loops without false positives |
+| SIGHUP/SIGINT lock cleanup (v2.41.0) | Clean lock files on crash signals |
 | EPIPE guard | Clean exit when stdout pipe closes |
 | ECOMPROMISED guard | Clean exit when lock mtime drifts |
 | SIGTERM handler | Graceful stop on process termination |

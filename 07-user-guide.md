@@ -1,6 +1,6 @@
 # GSD-2 User Guide
 
-Comprehensive reference for GSD-2, the autonomous coding agent built on the Pi SDK. This guide covers released functionality as of v2.33.x.
+Comprehensive reference for GSD-2, the autonomous coding agent built on the Pi SDK. This guide covers released functionality as of v2.58.0.
 
 ## Installation and Requirements
 
@@ -10,6 +10,8 @@ Comprehensive reference for GSD-2, the autonomous coding agent built on the Pi S
 - Git
 - Supported platforms: darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64
 
+At startup, GSD runs checks to verify that the Node.js version meets the minimum requirement and that `git` is available on `$PATH`. If either check fails, a clear error message is shown before the process exits (v2.46.0).
+
 ### Install via npm
 
 ```bash
@@ -17,6 +19,18 @@ npm install -g gsd-pi
 ```
 
 GSD checks for updates once every 24 hours. When a new version is available, an interactive prompt appears at startup with the option to update immediately or skip. Update from within a session with `/gsd update`.
+
+### Docker Sandbox
+
+An official Docker sandbox template is available for running GSD auto mode in an isolated container (v2.44.0):
+
+```bash
+# Build and run the official GSD Docker image
+docker build -t gsd-sandbox .
+docker run -it gsd-sandbox
+```
+
+The Dockerfile uses a multi-stage build with proven container patterns. This is useful for CI environments or when you want full filesystem isolation for auto-mode execution.
 
 ### VS Code Extension
 
@@ -27,6 +41,9 @@ The extension provides:
 - `@gsd` chat participant in VS Code Chat
 - Sidebar dashboard with connection status, model info, token usage, and quick actions
 - Full command palette for start/stop, model switching, and session export
+- Activity feed, workflow controls, session forking, and enhanced code lens (v2.53.0)
+- Status bar, file decorations, bash terminal, session tree, and conversation history (v2.52.0)
+- Remote SSH support via `extensionKind` (v2.51.0)
 
 The CLI (`gsd-pi`) must be installed first -- the extension connects to it via RPC.
 
@@ -65,13 +82,87 @@ Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, ve
 
 Auto mode reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh agent session, and injects a focused prompt with all relevant context pre-inlined. Every task gets a clean context window.
 
-### Headless Mode (CI)
+Use `--yolo` to skip the interactive project init prompt when launching auto mode in a new project (v2.49.0).
 
-`gsd headless auto` runs auto mode without interactive prompts:
+## Web Mode
+
+GSD includes a browser-based interface for visual monitoring and interaction.
+
+### Starting Web Mode
+
+```bash
+gsd --web     # start the web server
+gsd web       # alternative syntax
+```
+
+### Configuration Flags (v2.42.0)
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--host <addr>` | Bind address | `localhost` |
+| `--port <num>` | Listen port | auto-assigned |
+| `--allowed-origins <list>` | CORS allowed origins | same-origin |
+
+### Features
+
+- **Mobile responsive** -- the web UI adapts to phone and tablet screens (v2.45.0)
+- **Auth token gate** -- sessions require an auth token; a synthetic 401 is returned on missing tokens, with an unauthenticated boot state and recovery screen (v2.52.0). Tokens are stored in `localStorage` for multi-tab usage.
+- **Dark mode** -- a dedicated dark theme with raised token floor and flattened opacity tiers for improved terminal contrast (v2.52.0). Light theme also has improved contrast (v2.56.0).
+- **Change project root** -- a button in the web UI lets you switch the project directory without restarting the server (v2.44.0)
+- **Dashboard metrics** -- falls back to project totals when dashboard metrics are zero (v2.58.0)
+
+## Headless Mode
+
+Run GSD commands without the interactive TUI, suitable for CI pipelines, scripted workflows, and orchestrator integration.
+
+### Basic Usage
+
+```bash
+gsd headless "prompt"        # run a prompt
+gsd headless auto            # run auto mode (default)
+gsd headless next            # run one unit
+gsd headless status          # show progress dashboard
+gsd headless query           # instant JSON state snapshot (no LLM)
+gsd headless new-milestone --context spec.md   # create milestone from file
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--bare` | Minimal context: skip CLAUDE.md, AGENTS.md, user settings, user skills |
+| `--events <types>` | Filter JSONL output to specific event types (comma-separated) |
+| `--answers <path>` | Pre-supply answers and secrets from a JSON file |
+| `--resume <id>` | Resume a prior headless session by ID (prefix matching supported, v2.57.0) |
+| `--verbose` | Show tool calls in progress output |
+| `--timeout N` | Overall timeout in ms (default: 300000; disabled for auto-mode, v2.50.0) |
+| `--json` | JSONL event stream to stdout |
+| `--output-format <fmt>` | `text` (default), `json` (structured result), `stream-json` (JSONL events) |
+| `--model ID` | Override model |
+| `--supervised` | Forward interactive UI requests to orchestrator via stdout/stdin |
+| `--response-timeout N` | Timeout (ms) for orchestrator response (default: 30000) |
+
+### Output
+
+Headless text mode provides colorized output with thinking indicators, phase names, cost summaries, and durations (v2.55.0). Tool calls are shown when `--verbose` is enabled.
+
+### Auto-Mode Integration
+
+Headless mode integrates with auto mode seamlessly:
 - Auto-responds to interactive prompts
-- Detects completion and exits with structured codes: 0 complete, 1 error/timeout, 2 blocked
+- Detects completion and exits with structured codes
 - Auto-restarts on crash with exponential backoff (default 3 attempts)
 - Combined with provider error auto-resume, this enables true overnight unattended execution
+- UAT pauses are skipped in headless mode (v2.55.0)
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error or timeout |
+| 10 | Blocked |
+| 11 | Cancelled |
 
 ## Two-Terminal Workflow
 
@@ -114,6 +205,8 @@ All state lives on disk in `.gsd/`:
   PROJECT.md          -- what the project is right now
   REQUIREMENTS.md     -- requirement contract (active/validated/deferred)
   DECISIONS.md        -- append-only architectural decisions
+  KNOWLEDGE.md        -- cross-session rules, patterns, and lessons
+  RUNTIME.md          -- runtime context: API endpoints, env vars, services (v2.39)
   STATE.md            -- quick-glance status
   milestones/
     M001/
@@ -129,6 +222,66 @@ All state lives on disk in `.gsd/`:
             T01-SUMMARY.md
 ```
 
+## Commands Reference
+
+### Core Workflow
+
+| Command | Description |
+|---------|-------------|
+| `/gsd` | Step mode -- execute one unit at a time |
+| `/gsd auto` | Auto mode -- autonomous execution to milestone completion |
+| `/gsd status` | Progress dashboard with cost, phase, and health info |
+| `/gsd discuss` | Discuss architecture decisions; can target queued milestones (v2.48.0) |
+| `/gsd queue` | Queue the next milestone |
+| `/gsd next` | Run one unit and stop |
+
+### Project Management
+
+| Command | Description |
+|---------|-------------|
+| `/gsd rethink` | Conversational project reorganization -- restructure milestones, slices, and priorities through discussion (v2.45.0) |
+| `/gsd mcp` | Show MCP server status and connectivity for configured servers (v2.45.0) |
+| `/gsd changelog` | LLM-summarized release notes for GSD versions (v2.35.0) |
+| `/gsd logs` | Browse activity, debug, and metrics logs (v2.29.0) |
+| `/gsd keys` | Comprehensive API key manager -- add, remove, and verify keys (v2.29.0) |
+| `/gsd fast` | Switch to fast service tier for supported models (v2.42.0) |
+| `/gsd rate` | Show current rate limit status and token profile info (v2.36.0) |
+
+### Diagnostics and Debugging
+
+| Command | Description |
+|---------|-------------|
+| `/gsd doctor` | Validate `.gsd/` integrity, git health, and environment |
+| `/gsd forensics` | Full-access GSD debugger -- post-mortem analysis with journal and activity log awareness (upgraded v2.40.0, enhanced v2.48.0) |
+
+### Shell and Execution
+
+| Command | Description |
+|---------|-------------|
+| `/terminal` | Direct shell execution from within a GSD session (v2.51.0) |
+
+### Parallel Orchestration
+
+| Command | Description |
+|---------|-------------|
+| `/gsd parallel start` | Analyze eligibility and start workers |
+| `/gsd parallel status` | Show worker state, units, cost |
+| `/gsd parallel stop [MID]` | Stop all or specific worker |
+| `/gsd parallel pause [MID]` | Pause all or specific worker |
+| `/gsd parallel resume [MID]` | Resume paused workers |
+| `/gsd parallel merge [MID]` | Merge completed milestones |
+| `/gsd parallel watch` | Native TUI overlay for real-time worker monitoring (v2.56.0) |
+
+### Other
+
+| Command | Description |
+|---------|-------------|
+| `/model` | Switch model within a session |
+| `/gsd config` | Re-run the setup wizard |
+| `/gsd update` | Update GSD to latest version |
+| `/gsd migrate` | Migrate from v1 `.planning` directories |
+| `/worktree` (or `/wt`) | Manage git worktrees (list, merge, clean, remove) |
+
 ## Git Strategy
 
 ### Isolation Modes
@@ -137,11 +290,11 @@ GSD supports three isolation modes configured via `git.isolation`:
 
 | Mode | Working Directory | Branch | Best For |
 |------|-------------------|--------|----------|
-| `worktree` (default) | `.gsd/worktrees/<MID>/` | `milestone/<MID>` | Full file isolation between milestones |
+| `worktree` | `.gsd/worktrees/<MID>/` | `milestone/<MID>` | Full file isolation between milestones |
 | `branch` | Project root | `milestone/<MID>` | Submodule-heavy repos |
-| `none` | Project root | Current branch | Hot-reload workflows |
+| `none` (default since v2.46.0) | Project root | Current branch | Hot-reload workflows |
 
-### Worktree Mode (Default)
+### Worktree Mode
 
 Each milestone gets its own git worktree. All execution happens inside the worktree. On completion, the worktree is squash-merged to main as one clean commit. The worktree and branch are then cleaned up.
 
@@ -155,13 +308,14 @@ Work happens directly on the current branch. No worktree, no milestone branch. G
 
 ### Commit Format
 
-Commits use conventional commit format with scope:
+GSD metadata is stored in git trailers rather than commit subject scopes (v2.49.0):
 
 ```
-feat(S01/T01): core type definitions
-feat(S01/T02): markdown parser for plan files
-fix(M001/S03): bug fixes and doc corrections
-docs(M001/S04): workflow documentation
+feat: core type definitions
+
+GSD-Milestone: M001
+GSD-Slice: S01
+GSD-Task: T01
 ```
 
 ### Merge Strategies
@@ -194,6 +348,8 @@ GSD includes automatic recovery for common git issues:
 - Detached HEAD -- automatically reattaches to the correct branch
 - Stale lock files -- removes `index.lock` files from crashed processes
 - Orphaned worktrees -- detects and offers to clean up abandoned worktrees
+- Dirty working tree on merge -- auto-stashes dirty files before squash merge (v2.44.0)
+- Build artifact conflicts -- auto-resolved during milestone merge (v2.53.0)
 
 Run `/gsd doctor` to check git health manually.
 
@@ -208,7 +364,7 @@ Since v2.16, GSD uses libgit2 via native bindings for read-heavy operations in t
 Set `mode: team` in project preferences:
 
 ```yaml
-# .gsd/preferences.md (project-level, committed to git)
+# .gsd/PREFERENCES.md (project-level, committed to git)
 ---
 version: 1
 mode: team
@@ -235,10 +391,11 @@ Share planning artifacts while keeping runtime files local:
 ```
 
 **What gets shared** (committed to git):
-- `.gsd/preferences.md` -- project preferences
+- `.gsd/PREFERENCES.md` -- project preferences
 - `.gsd/PROJECT.md` -- living project description
 - `.gsd/REQUIREMENTS.md` -- requirement contract
 - `.gsd/DECISIONS.md` -- architectural decisions
+- `.gsd/KNOWLEDGE.md` -- cross-session rules and patterns
 - `.gsd/milestones/` -- roadmaps, plans, summaries, research
 
 **What stays local** (gitignored):
@@ -247,17 +404,6 @@ Share planning artifacts while keeping runtime files local:
 ### Unique Milestone IDs
 
 In team mode, milestones get unique IDs (e.g., `M001-abc123`) to prevent collisions when multiple developers create milestones concurrently.
-
-### commit_docs: false
-
-For teams where only some members use GSD, or when company policy requires a clean repo:
-
-```yaml
-git:
-  commit_docs: false
-```
-
-This adds `.gsd/` to `.gitignore` entirely.
 
 ### Automatic Pull Requests
 
@@ -293,6 +439,7 @@ parallel:
 ```
 /gsd parallel start    # analyze eligibility, confirm, spawn workers
 /gsd parallel status   # monitor progress
+/gsd parallel watch    # native TUI overlay (v2.56.0)
 /gsd parallel stop     # stop all workers
 ```
 
@@ -307,6 +454,25 @@ Each worker is a separate `gsd` process with complete isolation:
 - Crash recovery: per-worktree `.gsd/auto.lock`
 
 Workers and the coordinator communicate through file-based IPC using atomic writes (write-to-temp + rename).
+
+### TUI Monitor Dashboard (v2.54.0)
+
+A real-time TUI dashboard shows the state of all parallel workers, including:
+- Per-worker status, current unit, and cost
+- Aggregated progress across milestones
+- Self-healing worker recovery -- automatically restarts workers that fail due to transient errors
+
+### /gsd parallel watch (v2.56.0)
+
+A native TUI overlay dedicated to worker monitoring. Provides a focused view of parallel execution without interfering with other GSD commands running in the same terminal.
+
+### Self-Healing Worker Recovery (v2.54.0)
+
+The parallel orchestrator detects workers stuck in error states and automatically cleans them up or restarts them. Zombie workers are identified and terminated (v2.53.0).
+
+### Session Lock Contention (v2.56.0)
+
+Resolved multiple bugs around session lock contention in parallel mode. Workers no longer interfere with each other's lock files, and stale locks from crashed workers are cleaned up reliably.
 
 ### Eligibility Analysis
 
@@ -335,6 +501,7 @@ Before starting, GSD checks:
 | `/gsd parallel pause [MID]` | Pause all or specific worker |
 | `/gsd parallel resume [MID]` | Resume paused workers |
 | `/gsd parallel merge [MID]` | Merge completed milestones |
+| `/gsd parallel watch` | Native TUI overlay for worker monitoring (v2.56.0) |
 
 ### Merge Reconciliation
 
@@ -348,6 +515,24 @@ Before starting, GSD checks:
 Every unit's metrics are captured automatically: token counts, USD cost, duration, tool calls, message counts. Data is stored in `.gsd/metrics.json`.
 
 View costs via `Ctrl+Alt+G` or `/gsd status`. Aggregations are available by phase, by slice, by model, and project totals.
+
+### Per-Prompt Cost Display (v2.44.0)
+
+Enable the `show_token_cost` preference to see per-prompt token cost in the TUI footer:
+
+```yaml
+show_token_cost: true
+```
+
+This shows the cost of each individual prompt/response cycle as it completes.
+
+### Session Cost Tracking (v2.35.0)
+
+Session cost is accumulated independently of the message array. This means cost tracking survives context compaction and message pruning -- the running total is always accurate even when older messages are dropped to fit the context window.
+
+### API Request Counter (v2.29.0)
+
+For Copilot and subscription users who are billed by request count rather than tokens, the metrics system tracks API request counts alongside token usage.
 
 ### Budget Ceiling
 
@@ -378,6 +563,8 @@ When approaching the ceiling, the complexity router automatically downgrades mod
 - 75-90%: more aggressive downgrading
 - > 90%: nearly everything downgrades; only heavy tasks stay at standard
 
+Budget pressure is factored into model routing decisions when `dynamic_routing.budget_pressure` is enabled. Rate-limit errors also attempt model fallback before pausing (v2.53.0).
+
 ## Token Optimization Profiles
 
 Set via `token_profile` preference. Introduced in v2.17.0.
@@ -397,12 +584,6 @@ Every phase runs. Every context artifact is inlined. No shortcuts.
 ### Context Compression
 
 Each profile maps to an inline level (minimal, standard, full) that controls how much context is pre-loaded into dispatch prompts.
-
-### Prompt Compression (v2.29.0)
-
-Two strategies:
-- `truncate`: drop entire sections at boundaries (pre-v2.29 behavior, default for `quality`)
-- `compress`: apply heuristic text compression first, then truncate (default for `budget` and `balanced`)
 
 ### Context Selection
 
@@ -448,8 +629,10 @@ Validates `.gsd/` integrity:
 - File structure and naming conventions
 - Roadmap, slice, and task referential integrity
 - Completion state consistency
-- Git worktree health
+- Git worktree health and lifecycle checks
 - Stale lock files and orphaned runtime records
+- Environment health checks (Node version, git, providers)
+- Real-time issue visibility across the progress widget and health views
 
 ### Common Issues
 
@@ -490,14 +673,14 @@ Full state rebuild:
 - GitHub Issues: https://github.com/gsd-build/GSD-2/issues
 - Discord: https://discord.gg/gsd (approximately 3,200 members)
 - Dashboard: `Ctrl+Alt+G` or `/gsd status`
-- Forensics: `/gsd forensics` for post-mortem analysis
+- Forensics: `/gsd forensics` for full-access debugging and post-mortem analysis
 - Session logs: `.gsd/activity/` contains JSONL session dumps
 
 ### Platform-Specific Notes
 
 **macOS/Linux**: the `gsd` command may conflict with the oh-my-zsh git plugin alias (`git svn dcommit`). Either `unalias gsd` in `.zshrc` or use the `gsd-cli` binary name.
 
-**Windows**: MSYS2/Git Bash LSP issues with POSIX paths were fixed in v2.29+ (now uses `where.exe`). EBUSY errors during WXT/extension builds are caused by browser locks on output directories.
+**Windows**: MSYS2/Git Bash LSP issues with POSIX paths were fixed in v2.29+ (now uses `where.exe`). EBUSY errors during WXT/extension builds are caused by browser locks on output directories. Detached process groups are disabled on Win32 to prevent EINVAL (v2.52.0).
 
 ## Migration from v1
 
@@ -547,8 +730,8 @@ mode: solo                      # or "team"
 token_profile: balanced         # "budget", "balanced", or "quality"
 budget_ceiling: 50.00           # USD limit
 budget_enforcement: pause       # "warn", "pause", or "halt"
-compression_strategy: compress  # "truncate" or "compress"
 context_selection: full         # "full" or "smart"
+show_token_cost: false          # show per-prompt cost in footer (v2.44.0)
 
 models:
   planning: claude-opus-4-6
@@ -557,13 +740,12 @@ models:
   completion: claude-haiku-4-5
 
 git:
-  isolation: worktree           # "worktree", "branch", or "none"
+  isolation: none               # "worktree", "branch", or "none" (default changed v2.46.0)
   auto_push: false
   push_branches: false
   pre_merge_check: false
   merge_strategy: squash
   main_branch: main
-  commit_docs: true
   auto_pr: false
   pr_target_branch: develop
 

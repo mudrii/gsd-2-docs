@@ -25,6 +25,9 @@ The core autonomous execution engine.
 | v2.29.0 | Mar 18 | Three-stage promotion pipeline (Dev/Test/Prod) |
 | v2.30.0 | Mar 18 | Simplified pipeline: merged research into planning (ADR-003) |
 | v2.33.0 | Mar 19 | Live regression test harness for post-build pipeline validation |
+| v2.49.0 | Mar 25 | `--yolo` flag for non-interactive project init; GSD metadata moved to git trailers |
+| v2.50.0 | Mar 26 | 8-question quality gates at planning and completion; parallel gate evaluation |
+| v2.58.0 | Mar 28 | Concurrent invocation guard on `startAuto()` (#2923) |
 
 ---
 
@@ -47,6 +50,8 @@ Git worktree-based isolation for auto-mode execution.
 | v2.29.0 | Mar 18 | Worktree sync, branch-mode merge fallback, living docs sync |
 | v2.31.0 | Mar 18 | `-w`/`--worktree` CLI flag for isolated worktree sessions |
 | v2.33.0 | Mar 19 | Resolve main repo root in worktrees for stable identity hash |
+| v2.41.0 | Mar 21 | Merge anchor verification before worktree teardown (#1829) |
+| v2.42.0 | Mar 22 | Pre-merge cleanup: SQUASH_MSG cleanup, guard teardown against uncommitted changes (#1868) |
 
 ---
 
@@ -78,6 +83,8 @@ Running multiple workers across milestones simultaneously.
 | v2.24.0 | Mar 16 | Dashboard view for parallel workers with 80% budget alert |
 | v2.26.0 | Mar 17 | Worker NDJSON monitoring and budget enforcement |
 | v2.27.0 | Mar 17 | Crash recovery for parallel orchestrator (persisted state, PID liveness) |
+| v2.54.0 | Mar 27 | Real-time TUI monitor dashboard with self-healing (#2799) |
+| v2.56.0 | Mar 27 | `/gsd parallel watch` native TUI overlay for worker monitoring (#2806) |
 
 ---
 
@@ -116,6 +123,8 @@ Selecting and routing to different models based on context.
 | v2.26.0 | Mar 17 | Model selector grouped by provider with type and API docs fields |
 | v2.29.0 | Mar 18 | Model list grouped by provider in prefs wizard |
 | v2.30.0 | Mar 18 | Two-step provider-then-model picker in preferences wizard |
+| v2.38.0 | Mar 20 | ADR-004 -- derived-graph reactive task execution (#1546) |
+| v2.52.0 | Mar 27 | Replace model-ID pattern matching with capability metadata (#2548) |
 
 ---
 
@@ -149,6 +158,8 @@ Discovery, loading, and authoring of skills.
 | v2.22.0 | Mar 16 | `/review`, `/test`, `/lint` skills |
 | v2.29.0 | Mar 18 | 10 bundled skills for UI, quality, and code optimization |
 | v2.30.0 | Mar 18 | **Built-in skill authoring system** (ADR-003); `create-gsd-extension` skill |
+| v2.40.0 | Mar 20 | Skill tool resolution for automatic skill activation (#1661) |
+| v2.51.0 | Mar 26 | 30 skill packs with 40+ curated skills; `~/.agents/skills/` as primary directory |
 
 ---
 
@@ -181,6 +192,11 @@ Non-interactive execution for CI, scripts, and automation.
 | v2.27.0 | Mar 17 | Headless orchestration skill with supervised mode; auto-restart on crash with exponential backoff |
 | v2.28.0 | Mar 17 | `gsd headless query` for instant JSON state inspection (~50ms, no LLM) |
 | v2.29.0 | Mar 18 | `--answers` flag for headless answer injection; `--events` flag for JSONL stream filtering |
+| v2.50.0 | Mar 26 | Disable overall timeout for auto-mode; lock-guard auto-select (#2586) |
+| v2.52.0 | Mar 27 | `--bare` mode wired across headless/agent/resource pipeline; RPC protocol v2 with version handshake |
+| v2.54.0 | Mar 27 | Headless integration hardening and release (#2811) |
+| v2.55.0 | Mar 27 | Colorized verbose output with thinking, phases, cost, and durations (#2886); text mode observability |
+| v2.57.0 | Mar 28 | `--resume` flag for session ID prefix matching; text mode shows tool calls |
 
 ---
 
@@ -233,6 +249,8 @@ Integration with Visual Studio Code.
 | Version | Date | Evolution |
 |---------|------|-----------|
 | v2.23.0 | Mar 16 | **Introduced:** full VS Code extension with chat participant, RPC integration, marketplace publishing under FluxLabs publisher |
+| v2.52.0 | Mar 27 | Phase 1: status bar, file decorations, bash terminal, session tree, conversation history, code lens (#2651) |
+| v2.53.0 | Mar 27 | Phase 2: activity feed, workflow controls, session forking, enhanced code lens (#2656) |
 
 ---
 
@@ -286,6 +304,7 @@ MCP server and client integration.
 | v2.22.0 | Mar 16 | MCP server mode (`--mode mcp`); MCP server discovery from `.mcp.json` |
 | v2.29.0 | Mar 18 | Per-project MCP config support (`.gsd/mcp.json`) |
 | v2.30.0 | Mar 18 | Replaced MCPorter with native MCP client |
+| v2.45.0 | Mar 25 | `/gsd mcp` command for MCP server status and connectivity (#2362) |
 
 ---
 
@@ -302,6 +321,9 @@ Runtime health checks and debugging.
 | v2.22.0 | Mar 16 | `/gsd forensics` post-mortem investigation of auto-mode failures |
 | v2.29.0 | Mar 18 | `/gsd logs` command (activity, debug, metrics logs) |
 | v2.32.0 | Mar 19 | Environment health checks, progress score, always-on health widget |
+| v2.39.0 | Mar 20 | 13 new doctor enhancements (#1583) |
+| v2.40.0 | Mar 20 | Health check phase 2: real-time doctor issue visibility across widget, visualizer, and HTML reports (#1644) |
+| v2.41.0 | Mar 21 | Worktree lifecycle checks, cleanup consolidation, enhanced `/worktree list` (#1814) |
 
 ---
 
@@ -347,6 +369,234 @@ First-run experience and configuration.
 | v2.10.5 | Mar 13 | Simplified two-step auth flow |
 | v2.11.0 | Mar 14 | Custom OpenAI-compatible endpoint in onboarding wizard |
 | v2.29.0 | Mar 18 | Project onboarding detection and init wizard |
+
+---
+
+## Web Interface
+
+Browser-based UI for GSD.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.41.0 | Mar 21 | **Introduced:** browser-based web interface (#1717); Next.js-based |
+| v2.42.0 | Mar 22 | `--host`, `--port`, `--allowed-origins` flags for web mode (#1873); auth token persisted in sessionStorage (#1877) |
+| v2.44.0 | Mar 24 | "Change project root" button in web UI (#2355) |
+| v2.45.0 | Mar 25 | Mobile responsive layout (#2354) |
+| v2.52.0 | Mar 27 | Dark mode contrast improvements (#2734); auth token gate with synthetic 401, unauthenticated boot state, and recovery screen (#2740) |
+| v2.56.0 | Mar 27 | Light theme terminal contrast improvements (#2819) |
+| v2.58.0 | Mar 28 | Fall back to project totals when dashboard metrics are zero (#2847); skip shutdown in daemon mode (#2842) |
+
+---
+
+## SQLite State Engine
+
+Tool-driven write-side state transitions backed by SQLite.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.44.0 | Mar 24 | **Introduced:** tool-driven write-side state transitions -- replace markdown mutation with atomic SQLite tool calls (#2141); schema v8 groundwork |
+| v2.44.0 | Mar 24 | Schema v9 migration with sequence column on slices/tasks; schema v10 adds `replan_triggered_at` |
+| v2.46.0 | Mar 25 | Single-writer state engine v2 -- discipline layer on DB architecture; v3 -- state machine guards, actor identity, reversibility |
+| v2.46.0 | Mar 25 | Workflow-logger wired into engine, tool, manifest, and reconcile paths (#2494) |
+| v2.52.0 | Mar 27 | Comprehensive SQLite audit fixes -- indexes, caching, safety, reconciliation; schema v11 |
+
+---
+
+## Declarative Workflow Engine
+
+YAML-defined workflows through the auto-loop.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.42.0 | Mar 22 | **Introduced:** declarative workflow engine -- YAML-defined workflows through the auto-loop (#2024) |
+
+---
+
+## Daemon and Discord
+
+Background daemon process and Discord bot integration.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.57.0 | Mar 28 | **Introduced:** `packages/daemon` workspace package with DaemonConfig/LogLevel; discord.js v14 DiscordBot class with auth guard and lifecycle |
+| v2.57.0 | Mar 28 | Pure-function event formatters (10 functions) mapping RPC events to Discord messages |
+| v2.58.0 | Mar 28 | 6 discord.js shard/error/warn event listeners for reconnect handling; launchd fixes |
+
+---
+
+## Capability-Aware Model Routing
+
+Task-capability based model selection (ADR-004).
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.38.0 | Mar 20 | ADR-004 -- derived-graph reactive task execution (#1546) |
+| v2.52.0 | Mar 27 | **Introduced:** replace model-ID pattern matching with capability metadata (#2548) |
+
+---
+
+## Quality Gates
+
+Structured evaluation gates at planning and completion.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.50.0 | Mar 26 | **Introduced:** 8-question quality gates to planning and completion templates; parallel gate evaluation with `evaluating-gates` phase |
+
+---
+
+## AI-Powered Triage
+
+Automated issue and PR classification using Claude Haiku.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.36.0 | Mar 20 | **Introduced:** AI-powered issue and PR triage via Claude Haiku (#1510) |
+
+---
+
+## GitHub Sync Extension
+
+Auto-sync project state to GitHub Issues, PRs, and Milestones.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.39.0 | Mar 20 | **Introduced:** GitHub sync extension -- auto-sync to Issues, PRs, Milestones (#1603) |
+
+---
+
+## External State Directory
+
+Moving `.gsd/` out of the repo root into an external directory.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.30.0 | Mar 18 | Move `.gsd/` to external state directory with symlink (ADR-002) (#1242) |
+| v2.34.0 | Mar 19 | Keep external GSD state stable in worktrees (#1334) |
+| v2.36.0 | Mar 20 | Smarter `.gsd` root discovery -- git-root anchor + walk-up replaces symlink hack (#1386) |
+
+---
+
+## Parallel TUI Monitor
+
+Real-time dashboard for monitoring parallel workers.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.54.0 | Mar 27 | **Introduced:** real-time TUI monitor dashboard with self-healing for parallel workers (#2799) |
+| v2.56.0 | Mar 27 | `/gsd parallel watch` -- native TUI overlay for worker monitoring (#2806) |
+
+---
+
+## Curated Skill Ecosystem
+
+Managed skill packs and ecosystem directory.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.43.0 | Mar 23 | Extension resource management gates skills on Skill tool (#2235) |
+| v2.51.0 | Mar 26 | **Introduced:** 30 skill packs with 40+ curated skills; `~/.agents/skills/` as primary skills directory |
+| v2.51.0 | Mar 26 | SQLite/SQL, Redis, Prisma, Supabase/Postgres database packs; cloud platform packs (Firebase, Azure, AWS) |
+| v2.51.0 | Mar 26 | SDKROOT parsing from pbxproj for platform-aware iOS skill matching; migration from `~/.gsd/agent/skills/` |
+
+---
+
+## Offline Mode
+
+Complete offline support for GSD operation.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.45.0 | Mar 25 | **Introduced:** complete offline mode support (#2429) |
+
+---
+
+## Git Trailers
+
+GSD metadata stored in git trailers instead of commit subjects.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.49.0 | Mar 25 | **Introduced:** move GSD metadata from commit subject scopes to git trailers |
+
+---
+
+## Docker Sandbox
+
+Official Docker template for isolated auto-mode execution.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.44.0 | Mar 24 | **Introduced:** official Docker sandbox template for isolated GSD auto mode (#2360) |
+| v2.52.0 | Mar 27 | Docker overhaul -- adopt proven container patterns; add missing runtime stage name (#2716, #2765) |
+
+---
+
+## Event Journal and Rule Registry
+
+Unified rule registry and event journal for workflow automation.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.42.0 | Mar 22 | **Introduced:** unified rule registry, event journal, journal query tool, and tool naming convention (#1928) |
+| v2.48.0 | Mar 25 | Enhanced `/gsd forensics` with journal and activity log awareness |
+
+---
+
+## Claude Code CLI Provider
+
+External tool execution mode via Claude Code CLI.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.44.0 | Mar 24 | Support for non-API-key provider extensions like Claude Code CLI (#2382) |
+| v2.47.0 | Mar 25 | **Introduced:** `externalToolExecution` mode for external providers; Claude Code CLI provider extension |
+
+---
+
+## Managed RTK Integration
+
+Opt-in RTK (Real-Time Kit) support with preference and web UI toggle.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.51.0 | Mar 26 | **Introduced:** managed RTK integration with opt-in preference and web UI toggle (#2620) |
+
+---
+
+## Safety Mechanisms
+
+Snapshots and pre-merge checks for auto-mode safety.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.53.0 | Mar 27 | **Introduced:** enable safety mechanisms by default -- snapshots and pre-merge checks (#2678) |
+
+---
+
+## Search
+
+Web search integration and budget management.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.3.9 | Mar 12 | Tavily search integration |
+| v2.5.0 | Mar 12 | Native Anthropic web search |
+| v2.37.0 | Mar 20 | Session-level search budget to prevent unbounded native web search (#1529) |
+| v2.50.0 | Mar 26 | Enforce hard search budget and survive context compaction |
+
+---
+
+## CI/CD
+
+Continuous integration and delivery pipeline.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.29.0 | Mar 18 | Three-stage promotion pipeline (Dev/Test/Prod) (#1098); automated prod-release (#1194) |
+| v2.38.0 | Mar 20 | Reduce GitHub Actions minutes ~60-70% (~10k to ~3-4k/month) (#1552) |
+| v2.41.0 | Mar 21 | Skip build/test for docs-only PRs; prompt injection scan (#1699) |
+| v2.42.0 | Mar 22 | PR risk checker -- classify changed files by system and surface risk level (#1930) |
 
 ---
 
@@ -408,6 +658,44 @@ Compact view of when each major feature first appeared:
 | Extension manifest/registry | v2.30.0 | Mar 18 |
 | Skill authoring system | v2.30.0 | Mar 18 |
 | Workflow templates | v2.30.0 | Mar 18 |
+| External state directory (ADR-002) | v2.30.0 | Mar 18 |
 | AWS auth extension | v2.31.0 | Mar 18 |
 | Environment health checks | v2.32.0 | Mar 19 |
 | Live regression test harness | v2.33.0 | Mar 19 |
+| OpenRouter model auto-generation | v2.34.0 | Mar 19 |
+| AI-powered triage (Claude Haiku) | v2.36.0 | Mar 20 |
+| Session-level search budget | v2.37.0 | Mar 20 |
+| ADR-004 reactive task execution | v2.38.0 | Mar 20 |
+| CI Actions ~60-70% reduction | v2.38.0 | Mar 20 |
+| Doctor 13 enhancements | v2.39.0 | Mar 20 |
+| GitHub sync extension | v2.39.0 | Mar 20 |
+| Skill tool resolution | v2.40.0 | Mar 20 |
+| Doctor health phase 2 | v2.40.0 | Mar 20 |
+| Web interface | v2.41.0 | Mar 21 |
+| Doctor worktree lifecycle | v2.41.0 | Mar 21 |
+| Declarative workflow engine | v2.42.0 | Mar 22 |
+| Event journal and rule registry | v2.42.0 | Mar 22 |
+| PR risk checker | v2.42.0 | Mar 22 |
+| SQLite state engine | v2.44.0 | Mar 24 |
+| Docker sandbox | v2.44.0 | Mar 24 |
+| Offline mode | v2.45.0 | Mar 25 |
+| Mobile responsive web UI | v2.45.0 | Mar 25 |
+| `/gsd mcp` command | v2.45.0 | Mar 25 |
+| Single-writer engine v2/v3 | v2.46.0 | Mar 25 |
+| Claude Code CLI provider | v2.47.0 | Mar 25 |
+| Git trailers | v2.49.0 | Mar 25 |
+| Quality gates (8-question) | v2.50.0 | Mar 26 |
+| Hard search budget enforcement | v2.50.0 | Mar 26 |
+| Curated skill ecosystem (30 packs) | v2.51.0 | Mar 26 |
+| Managed RTK integration | v2.51.0 | Mar 26 |
+| VS Code extension phase 1 | v2.52.0 | Mar 27 |
+| Capability metadata model routing | v2.52.0 | Mar 27 |
+| Dark mode (web) | v2.52.0 | Mar 27 |
+| RPC protocol v2 | v2.52.0 | Mar 27 |
+| Safety mechanisms (default) | v2.53.0 | Mar 27 |
+| VS Code extension phase 2 | v2.53.0 | Mar 27 |
+| Parallel TUI monitor | v2.54.0 | Mar 27 |
+| Colorized headless output | v2.55.0 | Mar 27 |
+| `/gsd parallel watch` | v2.56.0 | Mar 27 |
+| Daemon and Discord bot | v2.57.0 | Mar 28 |
+| Concurrent invocation guard | v2.58.0 | Mar 28 |

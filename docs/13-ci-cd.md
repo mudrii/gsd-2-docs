@@ -225,6 +225,38 @@ gsd headless query         # read-only state inspection, returns JSON
 
 `gsd headless auto` auto-restarts the entire process on crash (default 3 attempts with exponential backoff). `gsd headless query` returns phase, cost, progress, and next-unit as parseable JSON without spawning an LLM session — useful for status checks in CI dashboards.
 
+## Pipeline Optimizations (v2.38–v2.44)
+
+### ~60-70% GitHub Actions Minutes Reduction (v2.38)
+
+In v2.38.0, the CI pipeline was overhauled to reduce GitHub Actions consumption from ~10,000 minutes/month to ~3,000-4,000 minutes/month — a 60-70% reduction. Key changes:
+
+- Consolidated redundant CI jobs
+- Eliminated unnecessary full rebuilds on non-code changes
+- Optimized test matrix to avoid duplicate platform coverage
+
+### CODEOWNERS (v2.44)
+
+v2.44.0 introduced a `CODEOWNERS` file and team workflow documentation. Pull requests now automatically assign reviewers based on which files are changed, reducing review latency and ensuring domain experts are notified.
+
+### Shallow Clones and npm Caching (v2.41)
+
+v2.41.0 reduced pipeline startup time with:
+
+- **Shallow clones**: CI jobs use `--depth 1` clones instead of full history
+- **npm caching**: `node_modules` and npm cache are preserved between runs with exponential backoff retry on `npm install` failures
+- **Docs-only PR skip**: PRs that only change documentation files skip the full build/test cycle entirely
+
+### PR Risk Checker (v2.42)
+
+v2.42.0 added a PR risk classifier that runs on every pull request. It analyzes changed files by system area (core engine, auto-mode, git integration, providers, etc.) and surfaces a risk level assessment. High-risk changes (e.g., touching the state machine or merge logic) are flagged for additional review.
+
+### Prompt Injection Scan (v2.41)
+
+v2.41.0 added a prompt injection scan to the CI pipeline. Skill names and user-supplied inputs are validated against a `SAFE_SKILL_NAME` guard to reject crafted names that could inject instructions into prompts.
+
+---
+
 ## Team Workflow: PRs, Reviews, and Branch Strategy
 
 GSD uses a trunk-based model centered on `main`:

@@ -8,8 +8,8 @@ GSD preferences are stored as YAML frontmatter inside markdown files. Settings c
 
 | Scope | Path | Applies to |
 |-------|------|-----------|
-| Global | `~/.gsd/preferences.md` | All projects |
-| Project | `.gsd/preferences.md` | Current project only |
+| Global | `~/.gsd/PREFERENCES.md` | All projects |
+| Project | `.gsd/PREFERENCES.md` | Current project only |
 | Tool API keys | `~/.gsd/agent/auth.json` | All projects |
 | Custom model definitions | `~/.gsd/agent/models.json` | All projects |
 | Routing history | `.gsd/routing-history.json` | Current project |
@@ -19,7 +19,7 @@ GSD preferences are stored as YAML frontmatter inside markdown files. Settings c
 
 ```
 .gsd/
-  preferences.md          — project preferences (YAML frontmatter)
+  PREFERENCES.md          — project preferences (YAML frontmatter, renamed from preferences.md in v2.52)
   metrics.json            — token/cost ledger for all units
   routing-history.json    — adaptive model routing history
   completed-units.json    — skipped/completed unit keys
@@ -43,6 +43,8 @@ The interactive wizard is the recommended way to edit preferences:
 /gsd prefs project     — project preferences wizard
 /gsd prefs status      — show merged effective preferences
 ```
+
+> **Migration note (v2.52):** `preferences.md` was renamed to `PREFERENCES.md` for consistency with other uppercase GSD files. GSD reads both filenames but prefers the uppercase variant. Worktrees also prefer `PREFERENCES.md` (v2.56).
 
 ---
 
@@ -106,7 +108,7 @@ Workflow mode. Setting this via `/gsd mode` applies a coordinated set of default
 | `git.push_branches` | `false` | `true` |
 | `git.pre_merge_check` | `false` | `true` |
 | `git.merge_strategy` | `"squash"` | `"squash"` |
-| `git.isolation` | `"worktree"` | `"worktree"` |
+| `git.isolation` | `"none"` | `"none"` |
 | `git.commit_docs` | `true` | `true` |
 | `unique_milestone_ids` | `false` | `true` |
 
@@ -279,6 +281,48 @@ Controls how files are inlined into dispatch prompts:
 
 ```yaml
 context_selection: smart
+```
+
+---
+
+### `show_token_cost` (v2.44)
+
+**Type:** `boolean`
+**Default:** `false`
+
+Show per-prompt token cost in the TUI footer. When enabled, each prompt displays the input/output token count and estimated USD cost.
+
+```yaml
+show_token_cost: true
+```
+
+---
+
+### `searchExcludeDirs` (v2.34+)
+
+**Type:** `string[]`
+**Default:** `[]`
+
+Directories to exclude from file search and picker results. Patterns are matched against relative paths.
+
+```yaml
+searchExcludeDirs:
+  - node_modules
+  - .git
+  - dist
+```
+
+---
+
+### `respectGitignoreInPicker`
+
+**Type:** `boolean`
+**Default:** `true`
+
+When `true`, the file picker respects `.gitignore` rules and excludes ignored files from results.
+
+```yaml
+respectGitignoreInPicker: true
 ```
 
 ---
@@ -657,7 +701,7 @@ git:
   commit_type: feat
   main_branch: main
   merge_strategy: squash
-  isolation: worktree
+  isolation: none
   commit_docs: true
   manage_gitignore: true
   worktree_post_create: .gsd/hooks/post-worktree-create
@@ -675,7 +719,7 @@ git:
 | `commit_type` | string | inferred | Override conventional commit prefix. Accepted values: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style` |
 | `main_branch` | string | `"main"` | Primary branch name |
 | `merge_strategy` | string | `"squash"` | How worktree branches merge into main: `"squash"` (combine all commits) or `"merge"` (preserve individual commits) |
-| `isolation` | string | `"worktree"` | Auto-mode git isolation: `"worktree"` (separate directory), `"branch"` (work in project root — useful for submodule-heavy repos), or `"none"` (commits on current branch, no worktree or milestone branch) |
+| `isolation` | string | `"none"` | Auto-mode git isolation: `"worktree"` (separate directory), `"branch"` (work in project root — useful for submodule-heavy repos), or `"none"` (commits on current branch, no worktree or milestone branch). Default changed from `"worktree"` to `"none"` in v2.46.0 |
 | `commit_docs` | boolean | `true` | Commit `.gsd/` planning artifacts to git. Set `false` to keep them local-only |
 | `manage_gitignore` | boolean | `true` | When `false`, GSD will not modify `.gitignore` — no baseline patterns, no self-healing |
 | `worktree_post_create` | string | none | Script to run after worktree creation. Receives `SOURCE_DIR` and `WORKTREE_DIR` env vars |
@@ -908,6 +952,8 @@ GSD reads these environment variables at startup:
 | Variable | Description |
 |----------|-------------|
 | `GSD_VERSION` | GSD version string (set by the binary) |
+| `GSD_HOME` | Override the global `~/.gsd` directory location (v2.39) |
+| `GSD_PROJECT_ID` | Override the project hash used for project identification (v2.39) |
 | `GSD_WORKFLOW_PATH` | Override path to the workflow protocol file (default: `~/.pi/GSD-WORKFLOW.md`) |
 | `TAVILY_API_KEY` | Tavily web search API key |
 | `BRAVE_API_KEY` | Brave web search API key |

@@ -1,6 +1,326 @@
 # Changelog
 
-This document covers released versions v2.24.0 through v2.28.0. All versions were released in March 2026. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+This document covers released versions v2.24.0 through v2.58.0. All versions were released in March 2026. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## v2.58.0 — 2026-03-28
+
+### Added
+- Ollama provider added to custom models registry.
+- Discord.js shard/error/warn event listeners for daemon reconnect handling.
+
+### Fixed
+- Concurrent invocation guard on `startAuto()` prevents duplicate auto-mode loops.
+- Three bugs preventing reliable parallel worker execution.
+- Web dashboard falls back to project totals when dashboard metrics are zero.
+- Raw YAML parsing under preference headings.
+
+---
+
+## v2.57.0 — 2026-03-28
+
+### Added
+- **`gsd daemon`** — background daemon process with `DaemonConfig`, control channels, and orchestrator settings.
+- Headless `--resume` flag resolves session IDs via prefix matching.
+- Headless `--events` and `--answers` flags for non-interactive workflows.
+- GLM-5.1 added to Z.AI provider.
+
+### Fixed
+- Resume cold auto bootstrap from DB.
+- Honest `unitTypes` for discuss dispatches.
+
+---
+
+## v2.56.0 — 2026-03-27
+
+### Added
+- **`/gsd parallel watch`** — native TUI overlay for real-time worker monitoring.
+
+### Fixed
+- Session lock contention and 3 related parallel-mode bugs resolved.
+- Prefer `PREFERENCES.md` in worktrees.
+- Resume auto-mode after transient provider pause.
+
+---
+
+## v2.55.0 — 2026-03-27
+
+### Added
+- Colorized headless verbose output with thinking, phases, cost, and durations.
+
+### Fixed
+- Monorepo root detection prevents workspace fragmentation.
+- Dynamic routing works without `models` section in preferences.
+
+---
+
+## v2.54.0 — 2026-03-27
+
+### Added
+- **Parallel TUI monitor dashboard** with self-healing worker recovery.
+- Headless integration hardening.
+
+---
+
+## v2.53.0 — 2026-03-27
+
+### Added
+- **VS Code extension** — activity feed, workflow controls, session forking, code lens.
+- Safety mechanisms enabled by default (snapshots, pre-merge checks).
+
+### Fixed
+- Zombie parallel workers stuck in error state cleaned up.
+- Stash pop conflicts and merge error handling.
+- Shell flag for Windows spawn in VS Code extension.
+
+---
+
+## v2.52.0 — 2026-03-27
+
+### Added
+- **VS Code extension** — status bar, file decorations, bash terminal, session tree, conversation history, code lens.
+- Dark mode contrast improvements in web UI.
+- Headless `--bare` mode for minimal resource loading.
+- RPC protocol v2 with init handshake and version detection.
+
+### Changed
+- **Capability metadata routing** replaces model-ID pattern matching in pi-ai.
+- **`preferences.md` renamed to `PREFERENCES.md`** for consistency.
+- Comprehensive SQLite audit — indexes, caching, safety, reconciliation.
+
+---
+
+## v2.51.0 — 2026-03-26
+
+### Added
+- **`/terminal`** — direct shell execution slash command.
+- Verification class compliance checks before milestone completion.
+- Managed RTK integration with opt-in preference and web UI toggle.
+- 30+ new skill packs (SQLite, Redis, Prisma, Supabase, Firebase, Azure, AWS, iOS).
+- **`~/.agents/skills/`** as primary skills directory with curated catalog.
+
+### Fixed
+- Light theme warning contrast.
+- Hallucination loop prevention by excluding `lastReasoning` from retry diagnostics.
+
+---
+
+## v2.50.0 — 2026-03-26
+
+### Added
+- **Quality gates** — 8-question evaluation in planning and completion templates.
+- Structured error propagation through `UnitResult`.
+
+### Fixed
+- Headless overall timeout disabled for auto-mode.
+- EAGAIN added to infra error codes to stop budget-burning retries.
+- Hard search budget enforcement.
+
+---
+
+## v2.49.0 — 2026-03-25
+
+### Added
+- **`--yolo` flag** for `/gsd auto` — non-interactive project init.
+
+### Changed
+- **Git trailers** replace commit subject scopes for GSD metadata.
+
+---
+
+## v2.48.0 — 2026-03-25
+
+### Added
+- **`/gsd discuss` targets queued milestones** — discuss upcoming work before it begins.
+- Enhanced `/gsd forensics` with journal and activity log awareness.
+
+### Fixed
+- Model registry scoped custom provider stream handlers to prevent clobbering.
+- Stale milestone ID reservations cleared at session start.
+
+---
+
+## v2.47.0 — 2026-03-25
+
+### Added
+- **Claude Code CLI provider** — external tool execution mode for Claude Code as a backend provider.
+
+---
+
+## v2.46.0 — 2026-03-25
+
+### Added
+- **Single-writer engine v3** — state machine guards, actor identity, reversibility.
+- Workflow logger wired into engine, tool, manifest, and reconcile paths.
+
+### Changed
+- **Default isolation changed from `worktree` to `none`.**
+- Node version and git availability startup checks added.
+
+---
+
+## v2.45.0 — 2026-03-25
+
+### Added
+- **`/gsd rethink`** — conversational project reorganization.
+- **`/gsd mcp`** — MCP server status and connectivity.
+- **Web UI mobile responsive** layout.
+- Message timestamps on user and assistant messages.
+- Complete offline mode support.
+- Global `~/.gsd/agent/KNOWLEDGE.md` injection into system prompt.
+
+### Fixed
+- Auto-mode SQLite bootstrap gate.
+- `auto_pr: true` now actually creates PRs (3 interacting bugs fixed).
+- Worktree submodule state preserved during teardown.
+
+---
+
+## v2.44.0 — 2026-03-24
+
+### Added
+- Non-API-key provider extension support (for Claude Code CLI).
+- Official Docker sandbox template for isolated auto mode.
+- **`show_token_cost`** preference — per-prompt token cost in footer.
+- **Tool-driven write-side state transitions** — SQLite replaces markdown mutation.
+- **CODEOWNERS** and team workflow documentation.
+
+---
+
+## v2.43.0 — 2026-03-23
+
+### Added
+- Opt-in duplicate detection in `/gsd forensics` before issue creation.
+
+### Fixed
+- Fast service tier applied outside auto-mode.
+- Web mode kills stale server process before launch (EADDRINUSE fix).
+- Memory and resource leaks across TUI, LSP, DB, and automation.
+
+---
+
+## v2.42.0 — 2026-03-22
+
+### Added
+- **Declarative workflow engine** — YAML-defined workflows through the auto-loop.
+- **PR risk checker** — classifies changed files by system area and surfaces risk level.
+- **`/gsd fast`** — fast service tier toggle.
+- `--host`, `--port`, `--allowed-origins` flags for web mode.
+
+### Fixed
+- Node v24 `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` boot failure.
+- Windows EPERM on `rmSync` cleanup with `maxRetries`.
+- Windows SIGTSTP crash prevention.
+
+---
+
+## v2.41.0 — 2026-03-21
+
+### Added
+- **Web mode** — `gsd --web` / `gsd web` launches a browser-based interface.
+- **Prompt injection scan** in CI.
+- **Hallucination guard** — rejects execute-task with zero tool calls.
+- **Merge anchor verification** before worktree teardown.
+- Worktree lifecycle checks and enhanced `/worktree list`.
+- `~/.gsd/projects/` orphan detection and pruning.
+- Docs-only PR skip in CI.
+
+### Fixed
+- Shallow clones + npm caching reduce pipeline minutes.
+- Dependency-based dispatch guard replaces positional ordering.
+- Session lock multi-path cleanup and false positive hardening.
+
+---
+
+## v2.40.0 — 2026-03-20
+
+### Added
+- **`/gsd forensics` upgraded** to full-access GSD debugger with runtime path awareness.
+- Health check phase 2 — real-time doctor issue visibility across widget, visualizer, and HTML reports.
+
+---
+
+## v2.39.0 — 2026-03-20
+
+### Added
+- **`GSD_HOME`** and **`GSD_PROJECT_ID`** environment variables.
+- `git.auto_pr` — create draft PR on milestone completion.
+- GitHub sync extension — auto-sync to Issues, PRs, Milestones.
+- **Sliding-window stuck detection** replaces simple counter.
+
+### Fixed
+- Data-loss recovery and prevention for `.gsd/` (v2.30.0–v2.38.0 regression).
+
+---
+
+## v2.38.0 — 2026-03-20
+
+### Added
+- **`anthropic-vertex` provider** — Claude on Vertex AI.
+- ADR-004 derived-graph reactive task execution.
+
+### Fixed
+- **~60-70% GitHub Actions minutes reduction** (~10k → ~3-4k/month).
+
+---
+
+## v2.37.0 — 2026-03-20
+
+### Added
+- Two-column dashboard layout with redesigned widget.
+- cmux integration with GSD runtime.
+
+---
+
+## v2.36.0 — 2026-03-20
+
+### Added
+- `AGENTS.md` / `CLAUDE.md` support (deprecates `agent-instructions.md`).
+- AI-powered issue and PR triage via Claude Haiku.
+- **`/gsd rate`** command.
+
+---
+
+## v2.35.0 — 2026-03-19
+
+### Added
+- **`/gsd changelog`** — LLM-summarized release notes.
+
+---
+
+## v2.34.0 — 2026-03-19
+
+### Added
+- Auto-generated OpenRouter model registry from API.
+
+### Fixed
+- Bootstrap lock release and re-entrant reacquire.
+- Quick-task branch lifecycle hardening.
+
+---
+
+## Migration Notes: v2.28.0 → v2.58.0
+
+### preferences.md → PREFERENCES.md (v2.52)
+
+The preferences file was renamed from `preferences.md` to `PREFERENCES.md` for consistency with other uppercase GSD state files. GSD reads both filenames but prefers the uppercase variant. Worktrees specifically look for `PREFERENCES.md` first (v2.56). No manual migration is required — GSD handles both transparently.
+
+### Default isolation: worktree → none (v2.46)
+
+The default `git.isolation` mode changed from `"worktree"` to `"none"`. New projects will commit directly on the current branch without creating worktrees. Existing projects with explicit `isolation: worktree` in preferences are unaffected. To restore the old default, add `git.isolation: worktree` to your preferences.
+
+### Git trailers (v2.49)
+
+GSD metadata moved from commit subject scopes (e.g., `feat(S01/T01):`) to git trailers (`GSD-Milestone: M001`). Old-format commits are still recognized. Tests and tools that parse GSD commit metadata should handle both formats.
+
+### ~/.agents/skills/ directory (v2.51)
+
+The primary skills directory moved from `~/.gsd/agent/skills/` to `~/.agents/skills/`. A migration runs automatically on first launch. Skills in the old location continue to work but are deprioritized after migration.
+
+### DB-backed state (v2.44–v2.52)
+
+State management progressively migrated from file-based markdown to SQLite. The DB is the source of truth for milestone status, task completion, and planning data. Disk artifacts (ROADMAP.md, PLAN.md, etc.) are still written for human readability and are reconciled with the DB on startup. If the DB is missing or corrupted, GSD recreates it from disk artifacts.
 
 ---
 

@@ -1,6 +1,6 @@
 # Commands Reference
 
-This document covers every command available in GSD: CLI flags, slash commands, keyboard shortcuts, and headless mode. All commands are verified against source code for v2.28.0 and earlier.
+This document covers every command available in GSD: CLI flags, slash commands, keyboard shortcuts, and headless mode. Verified against source code through v2.58.0.
 
 ---
 
@@ -23,8 +23,14 @@ This document covers every command available in GSD: CLI flags, slash commands, 
 | `gsd config` | Set up global API keys for search and docs tools |
 | `gsd update` | Update GSD to the latest version |
 | `gsd headless` | Run auto mode without a TUI |
+| `gsd headless --bare` | Minimal resource loading for fast startup |
+| `gsd headless --events` | Stream execution events as JSONL |
+| `gsd headless --answers` | Pre-supply answers to interactive prompts |
+| `gsd headless --resume` | Resume a previous headless session by ID prefix |
 | `gsd headless query` | Instant JSON project snapshot (~50ms, no LLM) |
 | `gsd headless new-milestone` | Create a new milestone from a context file |
+| `gsd --web` / `gsd web` | Start web mode (browser-based UI) |
+| `gsd daemon` | Start background daemon process |
 | `gsd --mode mcp` | Run GSD as an MCP server over stdin/stdout |
 
 ### Slash Command Quick Reference
@@ -36,8 +42,16 @@ This document covers every command available in GSD: CLI flags, slash commands, 
 | `/gsd auto` | Workflow | Autonomous mode — loop until done |
 | `/gsd stop` | Workflow | Stop auto mode gracefully |
 | `/gsd pause` | Workflow | Pause auto mode (preserves state) |
-| `/gsd discuss` | Workflow | Guided milestone/slice discussion |
+| `/gsd discuss` | Workflow | Guided milestone/slice discussion (targets queued milestones since v2.48) |
 | `/gsd quick` | Workflow | Execute a quick task without full planning overhead |
+| `/gsd rethink` | Workflow | Conversational project reorganization (v2.45) |
+| `/gsd fast` | Workflow | Toggle fast service tier for supported models (v2.42) |
+| `/gsd rate` | Visibility | Show rate limit status and token profile defaults (v2.36) |
+| `/gsd changelog` | Visibility | LLM-summarized release notes (v2.35) |
+| `/gsd logs` | Visibility | Browse activity, debug, and metrics logs (v2.29) |
+| `/gsd mcp` | Diagnostics | MCP server status and connectivity (v2.45) |
+| `/terminal` | Shell | Direct shell execution (v2.51) |
+| `/gsd parallel watch` | Orchestration | Native TUI overlay for worker monitoring (v2.56) |
 | `/gsd status` | Visibility | Progress dashboard |
 | `/gsd visualize` | Visibility | 10-tab interactive workflow visualizer |
 | `/gsd queue` | Visibility | Show queued/dispatched units and order |
@@ -55,10 +69,10 @@ This document covers every command available in GSD: CLI flags, slash commands, 
 | `/gsd mode` | Setup | Switch workflow mode (solo/team) |
 | `/gsd prefs` | Setup | Manage preferences |
 | `/gsd config` | Setup | Set API keys for external tools |
-| `/gsd keys` | Setup | API key manager |
+| `/gsd keys` | Setup | Comprehensive API key manager (v2.29) |
 | `/gsd hooks` | Setup | Show hook configuration |
 | `/gsd doctor` | Maintenance | Diagnose and repair `.gsd/` state |
-| `/gsd forensics` | Maintenance | Post-mortem investigation of failures |
+| `/gsd forensics` | Maintenance | Full-access GSD debugger with journal and activity log awareness (v2.40+) |
 | `/gsd export` | Maintenance | Export milestone/slice results |
 | `/gsd cleanup` | Maintenance | Remove merged branches or snapshots |
 | `/gsd migrate` | Maintenance | Migrate v1 `.planning/` to `.gsd/` format |
@@ -183,6 +197,24 @@ gsd update
 
 Checks npm for the latest version of `gsd-pi` and installs it. Exits after completing.
 
+### `gsd --web` / `gsd web` (v2.41)
+
+```bash
+gsd --web
+gsd web
+gsd web --host 0.0.0.0 --port 3000 --allowed-origins "http://localhost:3000"
+```
+
+Starts GSD in web mode with a browser-based interface. Opens a local web server and launches the UI in your default browser. Supports `--host`, `--port`, and `--allowed-origins` flags for network configuration (v2.42). The web UI includes dark mode, light theme, auth token management, and project root switching.
+
+### `gsd daemon` (v2.57)
+
+```bash
+gsd daemon
+```
+
+Starts GSD as a background daemon process. The daemon runs persistently and survives terminal/tab close. Useful for long-running auto-mode sessions where you want GSD to continue after disconnecting. Configured via `DaemonConfig` with `control_channel_id` and orchestrator settings.
+
 ### `gsd --debug`
 
 ```bash
@@ -238,13 +270,17 @@ gsd headless dispatch research
 
 | Flag | Description |
 |------|-------------|
-| `--timeout N` | Overall timeout in milliseconds (default: 300000 / 5 min) |
+| `--timeout N` | Overall timeout in milliseconds (default: 300000 / 5 min). Disabled for auto-mode (v2.50) |
 | `--max-restarts N` | Auto-restart on crash with exponential backoff (default: 3). Set `0` to disable |
 | `--json` | Stream all events as JSONL to stdout |
 | `--model ID` | Override the model for the headless session |
 | `--context <file>` | Context file for `new-milestone` (use `-` for stdin) |
 | `--context-text <text>` | Inline context text for `new-milestone` |
 | `--auto` | Chain into auto mode after milestone creation |
+| `--bare` | Minimal resource loading for fast startup (v2.52) |
+| `--events` | Stream execution events as JSONL (v2.57) |
+| `--answers` | Pre-supply answers to interactive prompts (v2.57) |
+| `--resume <id>` | Resume a previous headless session by ID prefix match (v2.57) |
 
 ### `gsd headless query`
 
@@ -360,9 +396,10 @@ Pauses auto mode while preserving all state. Resume with `/gsd auto`. The `Escap
 
 ```
 /gsd discuss
+/gsd discuss <milestone-id>
 ```
 
-Opens a guided milestone/slice discussion. Works alongside auto mode for architectural conversations without disrupting the queue.
+Opens a guided milestone/slice discussion. Works alongside auto mode for architectural conversations without disrupting the queue. Since v2.48.0, `/gsd discuss` can target queued (not yet active) milestones, allowing you to discuss upcoming work before it begins.
 
 ### `/gsd quick`
 
@@ -372,6 +409,24 @@ Opens a guided milestone/slice discussion. Works alongside auto mode for archite
 ```
 
 Execute a quick, self-contained task with GSD guarantees (atomic commits, state tracking) but without the full research-plan-execute-complete pipeline. Best for small, well-understood changes.
+
+### `/gsd rethink` (v2.45)
+
+```
+/gsd rethink
+```
+
+Conversational project reorganization. Starts a guided session that lets you restructure milestones, reorder slices, merge or split work items, and update dependency relationships through dialogue rather than manual file editing.
+
+### `/gsd fast` (v2.42)
+
+```
+/gsd fast
+/gsd fast on
+/gsd fast off
+```
+
+Toggle the fast service tier for supported models. When enabled, requests use the provider's fast/priority tier (where available) for lower latency. The service tier icon in the footer indicates when fast mode is active. Works both inside and outside auto mode.
 
 ---
 
@@ -434,6 +489,33 @@ View execution history from `.gsd/metrics.json`.
 | `--cost` | Show cost breakdown per entry |
 | `--phase` | Filter by phase type |
 | `--model` | Filter by model used |
+
+### `/gsd changelog` (v2.35)
+
+```
+/gsd changelog
+```
+
+Displays LLM-summarized release notes for the current GSD version. The changelog is generated from the raw CHANGELOG.md using an LLM to produce a concise, user-friendly summary of what changed.
+
+### `/gsd logs` (v2.29)
+
+```
+/gsd logs
+/gsd logs activity
+/gsd logs debug
+/gsd logs metrics
+```
+
+Browse session activity logs, debug output, and metrics data. Provides a filterable view into `.gsd/activity/` log files for troubleshooting and auditing.
+
+### `/gsd rate` (v2.36)
+
+```
+/gsd rate
+```
+
+Shows rate limit status and token profile defaults for the current provider. Wires dead token-profile defaults into a visible display.
 
 ---
 
@@ -704,14 +786,14 @@ Runs health checks on the `.gsd/` state directory. Detects and optionally fixes 
 
 The `heal` mode dispatches a structured prompt to the LLM with the list of unresolved errors and context from the GSD workflow protocol, enabling the agent to repair complex state problems.
 
-### `/gsd forensics`
+### `/gsd forensics` (upgraded v2.40)
 
 ```
 /gsd forensics
 /gsd forensics <args>
 ```
 
-Post-mortem investigation of auto-mode failures. Inspects execution logs and runs structured root-cause analysis. Use this when auto mode crashes or produces unexpected results.
+Full-access GSD debugger. Upgraded in v2.40.0 from a post-mortem tool to a comprehensive debugger with access to the event journal and activity logs. Inspects execution logs and runs structured root-cause analysis. Use this when auto mode crashes or produces unexpected results. In v2.43.0+, includes opt-in duplicate detection before issue creation. In v2.48.0+, has journal and activity log awareness for richer diagnostics.
 
 ### `/gsd export`
 
@@ -830,6 +912,15 @@ Flagging thresholds:
 - Token usage rising 20% or more compared to the previous window
 - Unused beyond the configured `skill_staleness_days` threshold
 
+### `/gsd mcp` (v2.45)
+
+```
+/gsd mcp
+/gsd mcp status
+```
+
+Shows MCP (Model Context Protocol) server status and connectivity. Displays which MCP servers are configured, their connection state, and available tools. Useful for diagnosing MCP integration issues.
+
 ### `/gsd run-hook`
 
 ```
@@ -902,6 +993,14 @@ Pauses all workers or a specific one.
 
 Resumes paused workers.
 
+### `/gsd parallel watch` (v2.56)
+
+```
+/gsd parallel watch
+```
+
+Native TUI overlay for real-time worker monitoring. Displays a live dashboard showing all parallel workers, their current phase, completed units, cost, and health status. Complements `/gsd parallel status` with a persistent, auto-refreshing view.
+
 ### `/gsd parallel merge`
 
 ```
@@ -951,6 +1050,19 @@ Prints a categorized command reference with descriptions for all GSD subcommands
 
 ---
 
+## Shell Commands
+
+### `/terminal` (v2.51)
+
+```
+/terminal
+/terminal <command>
+```
+
+Direct shell execution from within a GSD session. Opens an inline shell or executes a single command and returns the output. Useful for quick system commands without leaving the session context.
+
+---
+
 ## Git Commands
 
 ### `/worktree` / `/wt`
@@ -960,7 +1072,7 @@ Prints a categorized command reference with descriptions for all GSD subcommands
 /wt
 ```
 
-Git worktree lifecycle management — create, switch, merge, and remove worktrees. GSD uses worktrees to isolate milestone work from the main branch when `git.isolation` is set to `worktree` (the default).
+Git worktree lifecycle management — create, switch, merge, and remove worktrees. GSD uses worktrees to isolate milestone work from the main branch when `git.isolation` is set to `worktree`. Note: the default isolation mode changed from `worktree` to `none` in v2.46.0.
 
 ---
 

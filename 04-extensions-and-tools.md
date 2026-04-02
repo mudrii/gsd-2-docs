@@ -8,27 +8,57 @@ This document covers every bundled extension, the agent definitions, and the ski
 
 ## Table of Contents
 
-1. [GSD Core Extension](#gsd-core-extension)
-2. [Browser Tools](#browser-tools)
-3. [Search the Web](#search-the-web)
-4. [Google Search](#google-search)
-5. [Context7](#context7)
-6. [Background Shell](#background-shell)
-7. [Async Jobs](#async-jobs)
-8. [Subagent](#subagent)
-9. [Bundled Agents](#bundled-agents)
-10. [Mac Tools](#mac-tools)
-11. [MCP Client](#mcp-client)
-12. [Voice](#voice)
-13. [Slash Commands](#slash-commands)
-14. [Ask User Questions](#ask-user-questions)
-15. [Secure Env Collect](#secure-env-collect)
-16. [Remote Questions](#remote-questions)
-17. [Universal Config](#universal-config)
-18. [AWS Auth](#aws-auth)
-19. [TTSR](#ttsr)
-20. [Skill System](#skill-system)
-21. [Dashboard and Visualizer](#dashboard-and-visualizer)
+1. [Extension System](#extension-system)
+2. [GSD Core Extension](#gsd-core-extension)
+3. [Ollama](#ollama)
+4. [Claude Code CLI Provider](#claude-code-cli-provider)
+5. [Browser Tools](#browser-tools)
+6. [Search the Web](#search-the-web)
+7. [Google Search](#google-search)
+8. [Context7](#context7)
+9. [Background Shell](#background-shell)
+10. [Async Jobs](#async-jobs)
+11. [Subagent](#subagent)
+12. [Bundled Agents](#bundled-agents)
+13. [Mac Tools](#mac-tools)
+14. [MCP Client](#mcp-client)
+15. [Voice](#voice)
+16. [GitHub Sync](#github-sync)
+17. [Slash Commands](#slash-commands)
+18. [Ask User Questions](#ask-user-questions)
+19. [Secure Env Collect](#secure-env-collect)
+20. [Remote Questions](#remote-questions)
+21. [Universal Config](#universal-config)
+22. [AWS Auth](#aws-auth)
+23. [TTSR](#ttsr)
+24. [Skill System](#skill-system)
+25. [Dashboard and Visualizer](#dashboard-and-visualizer)
+
+---
+
+## Extension System
+
+### Manifest and Registry (v2.30.0)
+
+Every extension can declare a `package.json` manifest with a `pi` field containing metadata: extension ID, display name, description, and `provides` (tools, commands, hooks). The **extension registry** (`~/.gsd/extension-registry.json`) stores per-extension enable/disable state, allowing users to manage which extensions load at startup.
+
+Extensions without a manifest are always loaded (backwards-compatible). Extensions with a manifest are filtered through the registry before loading.
+
+### Topological Sort and Unified Filtering (v2.58.0)
+
+Extension loading now performs a topological sort on declared dependencies so that libraries (e.g., `cmux`) initialize before the extensions that depend on them. The unified registry filtering pipeline runs after discovery: read manifests, check enabled state, sort by dependency order, and return diagnostics for any unresolvable dependency warnings.
+
+### Extension Discovery with Pi Manifest Opt-Out (v2.39.0)
+
+The extension discovery system (`extension-discovery.ts`) scans `src/resources/extensions/` for entry points. Directories that declare `"pi": {}` (empty provides) in their `package.json` are treated as shared libraries, not extensions, and are excluded from the loading pipeline. This allows utility packages like `cmux` to live alongside extensions without being loaded as one.
+
+### `provides.hooks` in Extension Manifests (v2.58.0)
+
+Seven extension manifests now declare `provides.hooks` arrays listing which lifecycle hooks they handle (e.g., `session_start`, `agent_end`, `turn_start`). The `/gsd extensions` command displays these hooks in the extension detail view, giving users visibility into which extensions participate in each lifecycle phase.
+
+### TypeScript Syntax Detection in .js Extension Files (v2.44.0)
+
+The extension loader detects TypeScript syntax inside `.js` files and surfaces a warning suggesting the file be renamed to `.ts`. This prevents silent compilation failures when user-authored extensions use TypeScript features but have a `.js` extension.
 
 ---
 
@@ -75,6 +105,14 @@ The core extension powers the entire GSD workflow system. It is the largest exte
 | `/gsd templates` | List available workflow templates |
 | `/gsd new-milestone` | Create a new milestone |
 | `/gsd update` | Update GSD |
+| `/gsd mcp` | MCP server status and connectivity (v2.45.0) |
+| `/gsd rethink` | Conversational project reorganization (v2.45.0) |
+| `/gsd codebase` | Generate and manage codebase map (v2.58.0) |
+| `/gsd changelog` | LLM-summarized release notes (v2.35.0) |
+| `/gsd forensics` | Full-access GSD debugger with journal awareness (v2.40.0) |
+| `/gsd fast` | Enable fast service tier for supported models (v2.42.0) |
+| `/gsd logs` | Browse activity, debug, and metrics logs (v2.29.0) |
+| `/gsd parallel watch` | Native TUI overlay for worker monitoring (v2.56.0) |
 
 ### Key Subsystems
 
@@ -94,9 +132,82 @@ The core extension powers the entire GSD workflow system. It is the largest exte
 
 **Dashboard Overlay** (`dashboard-overlay.ts`): Full-screen TUI overlay showing auto-mode progress -- milestone/slice/task breakdown, current unit, completed units, timing, activity log, and cost metrics. Toggled with `Ctrl+Alt+G`.
 
-**Preferences** (`preferences.ts`, `preferences-*.ts`): YAML-based preferences in `~/.gsd/preferences.md` and project-level `.gsd/preferences.md`. Controls model selection, timeouts, skill rules, auto-mode behavior, and more.
+**Preferences** (`preferences.ts`, `preferences-*.ts`): YAML-based preferences in `~/.gsd/PREFERENCES.md` and project-level `.gsd/PREFERENCES.md`. Controls model selection, timeouts, skill rules, auto-mode behavior, and more.
 
 **Doctor** (`doctor.ts`, `doctor-*.ts`): Environment health checks covering providers, tools, git configuration, permissions, and file integrity.
+
+**Codebase Map** (`codebase-generator.ts`, `commands-codebase.ts`) (v2.58.0): Generates `.gsd/CODEBASE.md` -- a structured map of the project's source files with file descriptions, coverage stats, and generation timestamps. Supports incremental updates that preserve existing descriptions. Subcommands: `generate [--max-files N]`, `update`, `stats`.
+
+**Stale Commit Safety Check** (`doctor-git-checks.ts`) (v2.58.0): Doctor detects uncommitted changes that have sat idle beyond a configurable threshold. When auto-fix is enabled, it creates a snapshot commit (`gsd snapshot: uncommitted changes after Nm inactivity`) to prevent data loss. Stale snapshot commits are auto-cleaned during `/gsd cleanup`.
+
+**Single-Writer Engine** (v2.46.0): State machine guards, actor identity, and reversibility layer on the SQLite-backed state engine. All write-side state transitions go through atomic SQLite tool calls instead of direct markdown mutation (v2.44.0).
+
+---
+
+## Ollama
+
+**Path:** `src/resources/extensions/ollama/`
+
+First-class local LLM support via Ollama (v2.58.0). Auto-detects a running Ollama instance, discovers locally pulled models, and registers them as a provider. No configuration required -- if Ollama is running, models appear automatically.
+
+### How It Works
+
+1. Probes `http://localhost:11434/api/tags` (or `OLLAMA_HOST`) on session start
+2. Discovers all locally pulled models with capability detection (vision, reasoning, context window)
+3. Registers each model through the OpenAI-compatible endpoint (`/v1/chat/completions`)
+4. Re-probes on session switch to pick up newly pulled models
+5. Unregisters provider automatically if Ollama stops running
+
+### Tool: `ollama_manage`
+
+LLM-callable tool for managing local models:
+
+| Action | Description |
+|--------|-------------|
+| `status` | Check if Ollama is running, show version |
+| `list` | List available local models with sizes |
+| `pull` | Download a model with progress tracking |
+| `ps` | Show running models and VRAM usage |
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ollama` | Show Ollama status (running, version, loaded models) |
+| `/ollama list` | List all available local models with sizes |
+| `/ollama pull <model>` | Pull a model with progress |
+| `/ollama remove <model>` | Delete a local model |
+| `/ollama ps` | Show running models and resource usage |
+
+### Provider Registration
+
+- **Auth mode:** `none` (local inference, no API key)
+- **API:** OpenAI-completions compatible
+- **Compat flags:** No developer role, no reasoning effort, no usage in streaming
+- **Cost:** Zero (local inference)
+
+---
+
+## Claude Code CLI Provider
+
+**Path:** `src/resources/extensions/claude-code-cli/`
+
+External tool execution mode for CLI providers (v2.47.0). Registers a model provider that delegates inference to the user's locally-installed Claude Code CLI via the official Agent SDK.
+
+Users with a Claude Code subscription (Pro/Max/Team) get subsidized inference through GSD's UI -- no API key required. Uses Anthropic's official `@anthropic-ai/claude-agent-sdk`, never touches credentials, never offers a login flow.
+
+### Architecture
+
+- **Auth mode:** `externalCli` -- a new provider category added in v2.44.0 for non-API-key providers
+- **API:** `anthropic-messages`
+- **Readiness check:** Detects whether `claude` CLI is installed and authenticated
+- **Streaming:** Custom stream adapter translates Agent SDK events into GSD's internal stream format
+- **Partial builder:** Accumulates streaming deltas into complete message structures
+- Tool calls are rendered above text responses in the TUI
+
+### Models
+
+Exposes the Claude models available through the user's Claude Code subscription, identified by their standard Anthropic model IDs.
 
 ---
 
@@ -174,10 +285,10 @@ Web search with multiple provider backends. Provides three tools:
 
 ### Search Provider Resolution
 
-Provider preference is stored in `~/.gsd/agent/auth.json` and `~/.gsd/preferences.md`. Resolution order:
+Provider preference is stored in `~/.gsd/agent/auth.json` and `~/.gsd/PREFERENCES.md`. Resolution order:
 
 1. Override preference (from tool parameter)
-2. `preferences.md` setting
+2. `PREFERENCES.md` setting
 3. `auth.json` stored preference
 4. Auto-detect: Tavily first, then Brave, then Ollama
 
@@ -308,7 +419,7 @@ Three execution modes:
 
 Agents are `.md` files with YAML frontmatter, discovered from:
 - **User agents:** `~/.gsd/agent/agents/`
-- **Project agents:** `.pi/agents/` (nearest ancestor)
+- **Project agents:** `.pi/agents/` or `.gsd/agents/` (nearest ancestor)
 
 Frontmatter fields:
 ```yaml
@@ -372,6 +483,14 @@ TypeScript specialist for advanced type system patterns, complex generics, and e
 - **Memory:** project-scoped persistent memory
 - **Capabilities:** Type-first development, strict mode, branded types, discriminated unions, build tooling
 
+### Codebase Map (v2.58.0)
+
+The `/gsd codebase generate` command produces `.gsd/CODEBASE.md`, a structured inventory of source files with directory groupings, file descriptions, and coverage statistics. Agents can reference this map for faster orientation. Incremental updates (`/gsd codebase update`) preserve existing descriptions and add only new files.
+
+### Stale Commit Safety Check (v2.58.0)
+
+Doctor's git checks detect uncommitted changes that have been idle beyond a configurable threshold. When auto-fix is enabled, a snapshot commit is created to prevent data loss. These snapshot commits are auto-cleaned during `/gsd cleanup` or worktree teardown, so they never pollute the final history.
+
 ---
 
 ## Mac Tools
@@ -418,7 +537,7 @@ macOS automation via a Swift CLI that interfaces with Accessibility APIs, NSWork
 
 **Path:** `src/resources/extensions/mcp-client/`
 
-Native MCP (Model Context Protocol) server integration. Connects to external MCP servers configured in project files.
+Native MCP (Model Context Protocol) server integration, replacing the former MCPorter external dependency (v2.30.0). Connects to external MCP servers configured in project files using the `@modelcontextprotocol/sdk` Client directly -- no external CLI required.
 
 ### Tools
 
@@ -432,11 +551,22 @@ Native MCP (Model Context Protocol) server integration. Connects to external MCP
 
 MCP servers are configured in project files:
 - `.mcp.json` (project root)
-- `.gsd/mcp.json`
+- `.gsd/mcp.json` (per-project, v2.29.0)
 
 Supports two transport types:
 - **stdio:** Local process with command + args + env
 - **http:** Remote server via Streamable HTTP transport
+
+### Environment Variable Resolution (v2.39.0)
+
+`${VAR}` references in `.mcp.json` `env` fields are resolved from `process.env` at connection time. This allows secrets to be stored in shell profile or `.env` files rather than committed to the MCP config.
+
+### `/gsd mcp` Command (v2.45.0)
+
+Dedicated command for MCP server status and connectivity diagnostics:
+- Lists all configured servers with transport type and connection state
+- Tests connectivity to each server
+- Shows discovered tools per server
 
 ### Connection Management
 
@@ -475,6 +605,42 @@ Voice transcription input for the TUI.
 - Linux: Python script with `sounddevice` for recording, Groq Whisper API for transcription
 - Auto-installs Python dependencies in `~/.gsd/voice-venv/` on first run (Linux)
 - Accumulates text across pause-induced transcription resets
+
+---
+
+## GitHub Sync
+
+**Path:** `src/resources/extensions/github-sync/`
+
+Opt-in extension that syncs GSD lifecycle events to GitHub (v2.39.0). Maps GSD's internal workflow hierarchy to native GitHub objects for team visibility and project tracking.
+
+### Sync Mapping
+
+| GSD Concept | GitHub Object |
+|-------------|---------------|
+| Milestone | GitHub Milestone + tracking issue |
+| Slice | Draft PR |
+| Task | Sub-issue with auto-close on commit |
+
+### How It Works
+
+1. Integration hooks into `auto-post-unit.ts` via dynamic import
+2. On milestone creation, creates a GitHub Milestone and a tracking issue
+3. On slice creation, creates a draft PR linked to the milestone
+4. On task completion, closes the corresponding sub-issue
+5. Mapping state is persisted in `.gsd/github-sync-mapping.json`
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/github-sync` or `/github-sync bootstrap` | Initialize sync -- creates GitHub objects for existing milestones/slices/tasks |
+| `/github-sync status` | Show sync mapping counts and open/closed state |
+
+### Requirements
+
+- `gh` CLI installed and authenticated
+- Repository must be a GitHub remote
 
 ---
 
@@ -558,7 +724,7 @@ Route `ask_user_questions` prompts to Slack, Discord, or Telegram when running i
 
 ### Configuration
 
-Stored in `~/.gsd/preferences.md`:
+Stored in `~/.gsd/PREFERENCES.md`:
 ```yaml
 remote_questions:
   channel: discord
@@ -624,7 +790,7 @@ Show discovered AI tool configurations in the TUI.
 
 **Path:** `src/resources/extensions/aws-auth/`
 
-Automatically refreshes AWS credentials when Bedrock API requests fail with authentication/token errors.
+Automatically refreshes AWS credentials when Bedrock API requests fail with authentication/token errors (v2.31.0).
 
 ### How It Works
 
@@ -690,6 +856,39 @@ ExpiredTokenException, expired security tokens, SSO session expired, unable to l
 
 Skills are specialized instruction sets that GSD loads when the task matches. They provide domain-specific guidance -- coding patterns, framework idioms, testing strategies, and tool usage.
 
+### Skill Locations
+
+- **Primary user skills:** `~/.agents/skills/<skill-name>/SKILL.md` (v2.51.0)
+- **Legacy user skills:** `~/.gsd/agent/skills/<skill-name>/SKILL.md` (migrated automatically)
+- **Project skills:** `.pi/agent/skills/<skill-name>/SKILL.md`
+- User skills take precedence over project skills
+
+### Migration from Legacy Path (v2.51.0)
+
+Skills previously stored in `~/.gsd/agent/skills/` are auto-migrated to `~/.agents/skills/` on first access. The migration copies skill directories, prioritizes the ecosystem (curated) catalog over legacy copies, and skips already-migrated skills. After migration, the legacy directory is deprioritized in discovery.
+
+### Curated Catalog (v2.51.0)
+
+GSD ships with a curated skill catalog containing 30 skill packs with 40+ curated skills. The catalog is organized by ecosystem detection -- project dependencies, file patterns, and framework markers determine which skills are surfaced.
+
+| Category | Packs |
+|----------|-------|
+| **Web frameworks** | React, Next.js, Vue, Svelte, Angular, Remix |
+| **Backend** | FastAPI, Django, Express, NestJS, Rails |
+| **Languages** | Rust, Go, Python, TypeScript, Swift |
+| **Mobile** | SwiftUI, React Native, Flutter |
+| **Databases** | SQLite/SQL, Prisma, Supabase/Postgres, Redis |
+| **Cloud** | Firebase, Azure, AWS |
+| **Quality** | Testing, security audit, code review, linting |
+| **DevOps** | GitHub Actions, Docker security |
+| **Desktop** | Tauri, Electron |
+
+Skills are matched by scanning `package.json`, `Cargo.toml`, `go.mod`, `requirements.txt`, `Podfile`, directory structures, and other ecosystem markers.
+
+### Platform-Aware iOS Skill Matching (v2.51.0)
+
+For iOS/macOS projects, the skill matcher parses `SDKROOT` from `.pbxproj` files to distinguish between iOS, macOS, watchOS, and tvOS targets. This prevents SwiftUI-iOS skills from activating on macOS-only projects and vice versa.
+
 ### Bundled Skills
 
 | Skill | Trigger | Description |
@@ -719,24 +918,30 @@ Skills are specialized instruction sets that GSD loads when the task matches. Th
 | `suggest` | Skills identified but require confirmation (default) |
 | `off` | No skill discovery |
 
-### Skill Locations
+### Skill Tool Resolution (v2.40.0)
 
-- **User skills:** `~/.gsd/agent/skills/<skill-name>/SKILL.md`
-- **Project skills:** `.pi/agent/skills/<skill-name>/SKILL.md`
-- User skills take precedence over project skills
+The Skill tool (`pi.registerTool("Skill", ...)`) is the LLM-callable interface for activating skills during a session. When the agent calls the Skill tool, it resolves the skill name against the catalog, loads the SKILL.md, and injects it into the system prompt. This replaces the earlier heuristic-based activation that triggered skills based on keyword matching in task descriptions.
+
+### `create-gsd-extension` Skill (v2.30.0)
+
+A built-in skill that guides the agent through creating a new GSD extension from scratch -- scaffolding the directory, writing the `package.json` manifest, creating the `index.ts` entry point with tool/command/hook registrations, and testing the extension loads correctly.
+
+### SAFE_SKILL_NAME Guard (v2.50.0)
+
+Skill names are validated against a strict allowlist pattern before activation. This prevents prompt injection via crafted skill names that could contain system prompt overrides or instruction fragments. Names must match `^[a-zA-Z0-9_-]+$`.
 
 ### Custom Skills
 
 Create a directory with a `SKILL.md` file:
 ```
-~/.gsd/agent/skills/my-skill/
+~/.agents/skills/my-skill/
   SKILL.md           -- instructions for the LLM
   references/        -- optional reference files
 ```
 
 ### Skill Preferences
 
-Control via `~/.gsd/preferences.md`:
+Control via `~/.gsd/PREFERENCES.md`:
 ```yaml
 always_use_skills:
   - debug-like-expert
@@ -810,3 +1015,11 @@ Generates self-contained HTML reports in `.gsd/reports/`:
 - Printable to PDF from any browser
 
 **Auto-generation:** `auto_report: true` (default) generates after milestone completion.
+
+---
+
+## Anthropic Vertex Provider (v2.38.0)
+
+Claude on Vertex AI. Registered as the `anthropic-vertex` provider, giving users access to Claude models through Google Cloud's Vertex AI platform. Detected automatically by the provider doctor.
+
+Requires Google Cloud credentials configured for Vertex AI access. Uses the Anthropic Messages API format routed through the Vertex AI endpoint.

@@ -527,6 +527,54 @@ Both `.gsd/parallel/` and `.gsd/worktrees/` are gitignored — they are runtime-
 
 ---
 
+## TUI Monitor Dashboard (v2.54)
+
+Starting in v2.54.0, parallel orchestration includes a real-time TUI monitor dashboard with self-healing capabilities. The dashboard provides:
+
+- Live worker status with phase, progress, and cost for each milestone
+- Automatic detection and recovery of failed workers (self-healing)
+- Zombie worker cleanup for processes stuck in error state
+- Visual indicators for worker health and resource consumption
+
+The dashboard runs as a persistent overlay that auto-refreshes, complementing the snapshot-style `/gsd parallel status` command.
+
+---
+
+## `/gsd parallel watch` (v2.56)
+
+The `/gsd parallel watch` command provides a native TUI overlay specifically for worker monitoring. It shows:
+
+- All active workers with real-time status updates
+- Per-worker cost tracking and unit completion counts
+- Health indicators and heartbeat status
+- Session lock state for each worker
+
+This is lighter-weight than the full monitor dashboard and designed for quick status checks during parallel execution.
+
+---
+
+## Self-Healing Workers (v2.54)
+
+Starting in v2.54.0, parallel workers include self-healing capabilities. When a worker encounters a recoverable error (transient provider failure, temporary lock contention, stale state), it can automatically recover without coordinator intervention. The self-healing system:
+
+- Detects and cleans up zombie workers stuck in error state
+- Automatically restarts failed workers when the underlying issue is transient
+- Reports unrecoverable failures to the coordinator for manual intervention
+
+---
+
+## Session Lock Contention Fixes (v2.56)
+
+v2.56.0 resolved session lock contention issues that could cause parallel workers to stall. The fixes address three related bugs:
+
+- Lock file contention between workers sharing the same project root
+- Race conditions when multiple workers attempt simultaneous state transitions
+- Stale lock detection that was too aggressive, causing healthy workers to be killed
+
+These fixes significantly improve reliability of parallel execution with 3+ concurrent workers.
+
+---
+
 ## Doctor Integration
 
 `/gsd doctor` detects parallel-specific issues:
