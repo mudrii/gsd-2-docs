@@ -1,7 +1,7 @@
 # GSD-2 Architecture Overview
 
 **Package**: `gsd-pi` (npm)
-**Version**: 2.58.0
+**Version**: 2.67.0
 **License**: MIT
 **Repository**: https://github.com/gsd-build/gsd-2
 **Runtime**: Node.js >= 22.0.0
@@ -24,7 +24,7 @@ gsd-2/
     native/                 @gsd/native      — TypeScript bindings for Rust N-API engine
     pi-agent-core/          @gsd/pi-agent-core (v0.57.1) — general-purpose agent core (vendored from pi-mono)
     pi-ai/                  @gsd/pi-ai (v0.57.1)         — unified LLM API (vendored from pi-mono)
-    pi-coding-agent/        @gsd/pi-coding-agent (v2.58.0) — coding agent CLI (vendored from pi-mono)
+    pi-coding-agent/        @gsd/pi-coding-agent (v2.67.0) — coding agent CLI (vendored from pi-mono)
     pi-tui/                 @gsd/pi-tui (v0.57.1)        — terminal UI library (vendored from pi-mono)
     rpc-client/             @gsd-build/rpc-client (v2.52.0) — standalone RPC protocol v2 client SDK (zero internal deps)
     mcp-server/             @gsd-build/mcp-server (v2.52.0) — MCP server for GSD orchestration (Claude Code, Cursor, etc.)
@@ -59,10 +59,10 @@ gsd-2/
 | `@gsd/native` | 0.1.0 | TypeScript wrapper around Rust N-API addon; provides `grep`, `glob`, `ps`, `highlight`, `ast`, `diff`, `text`, `html`, `image`, `fd`, `clipboard`, `git`, `gsd_parser` |
 | `@gsd/pi-agent-core` | 0.57.1 | General-purpose agent core: session management, tool dispatch, extension loading |
 | `@gsd/pi-ai` | 0.57.1 | Unified LLM API across providers (Anthropic, OpenAI, Google, xAI, Mistral, Groq, OpenRouter, Bedrock, Anthropic Vertex, custom OpenAI-compatible) |
-| `@gsd/pi-coding-agent` | 2.58.0 | Full coding agent: `InteractiveMode`, `SessionManager`, `AuthStorage`, `ModelRegistry`, `SettingsManager`, RPC/MCP modes |
+| `@gsd/pi-coding-agent` | 2.67.0 | Full coding agent: `InteractiveMode`, `SessionManager`, `AuthStorage`, `ModelRegistry`, `SettingsManager`, RPC/MCP modes |
 | `@gsd/pi-tui` | 0.57.1 | Terminal UI primitives used by the interactive mode |
 | `@gsd-build/rpc-client` | 2.52.0 | Standalone RPC client SDK — zero internal dependencies; RPC protocol v2 types, JSONL utilities, `RpcClient` class |
-| `@gsd-build/mcp-server` | 2.52.0 | MCP server exposing GSD orchestration tools for Claude Code, Cursor, and other MCP clients; `SessionManager`, `createMcpServer` |
+| `@gsd-build/mcp-server` | 2.52.0 | MCP server exposing GSD orchestration tools for Claude Code, Cursor, and other MCP clients; `SessionManager`, `createMcpServer`. Includes `workflow-tools.ts` (v2.63.0+) exposing core GSD mutation/read handlers over MCP |
 | `@gsd-build/daemon` | 0.1.0 | Background daemon: project scanning, Discord bot (discord.js v14) with orchestrator, event bridge, channel manager, launchd integration, session lifecycle management |
 
 All four `pi-*` packages are vendored from the upstream `pi-mono` repository. They are compiled separately (`npm run build:pi`) before the main GSD build.
@@ -145,6 +145,22 @@ GSD prepends its own `node_modules` to `NODE_PATH` and calls `Module._initPaths(
 ### Single-Writer Engine
 
 The single-writer engine (v2/v3, introduced in v2.46.0) enforces discipline on state transitions. State machine guards prevent invalid transitions, actor identity tracks which component initiated a write, and operations are reversible. The `workflow-logger` is wired into engine, tool, manifest, and reconcile paths to provide an audit trail. All write-side DB mutations flow through typed tool calls with transaction isolation.
+
+### LLM Safety Harness (v2.64.0)
+
+The safety harness is a central module for LLM damage control during auto-mode. It provides real-time evidence collection on tool calls, destructive bash command classification, post-unit git diff validation against plan, claimed-vs-actual verification evidence cross-referencing, pre-unit git checkpoints with optional auto-rollback, and output content validation. All components are individually toggleable via PREFERENCES.md and enabled by default.
+
+### 5-Wave State Machine Hardening (v2.66.0)
+
+v2.66.0 applied a structured 5-wave hardening pass to the state machine: (1) critical data integrity fixes, (2) event log and reconciliation robustness, (3) session and recovery robustness, (4) atomic writes with randomized tmp paths, and (5) consistency and cleanup. This was accompanied by 86+ regression tests and WAL-safe migration backups.
+
+### Tiered Context Injection (M005) and Decision Scope Cascade (R005) (v2.67.0)
+
+v2.67.0 introduced M005 tiered context injection, which scopes context by relevance and achieves 65%+ reduction in injected context size. R005 decision scope cascade derives decision scope from slice metadata, ensuring that decisions are applied at the correct granularity level.
+
+### Ollama Provider Integration (v2.59.0--v2.64.0)
+
+Ollama support was added as a first-class extension in v2.59.0 and upgraded to a native `/api/chat` provider with full option exposure in v2.64.0. This enables local LLM inference through a running Ollama instance without requiring external API keys.
 
 ---
 
@@ -250,7 +266,7 @@ Each extension manifest declares:
 2. **resource-loader.ts**: `initResources()` syncs bundled extensions to `~/.gsd/agent/extensions/`. `buildResourceLoader()` constructs a `DefaultResourceLoader` that loads from both `~/.gsd/agent/extensions/` (GSD) and `~/.pi/agent/extensions/` (Pi), deduplicating by extension key. Pi-origin extensions that overlap with bundled GSD extensions are excluded.
 3. **createAgentSession()**: The Pi SDK loads extensions from the resource loader using jiti for TypeScript transpilation.
 
-### Bundled Extensions (v2.58.0)
+### Bundled Extensions (v2.67.0)
 
 | Extension | Directory | Purpose |
 |-----------|-----------|---------|
@@ -564,6 +580,9 @@ Key auto-mode modules (in the GSD extension):
 | `workflow-logger.ts` | Structured audit log for state transitions |
 | `workflow-reconcile.ts` | Disk-to-DB reconciliation |
 | `workflow-manifest.ts` | Workflow template manifest loading |
+| `workflow-tool-executors.ts` | Transport-neutral tool handlers for MCP and extension use (v2.63.0+) |
+| `safety-harness.ts` | LLM safety harness: evidence collection, destructive guard, file change validation, checkpoints/rollback (v2.64.0+) |
+| `notifications.ts` | Persistent notification panel with TUI overlay, widget, and web API (v2.65.0+) |
 
 ---
 

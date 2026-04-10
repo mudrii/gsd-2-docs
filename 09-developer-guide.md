@@ -200,7 +200,7 @@ The context pipeline is the full journey of a user prompt through every transfor
 
 **Input events:** `input`
 
-**Model events:** `model_select`
+**Model events:** `model_select`, `before_model_select` (v2.62.0)
 
 **User bash events:** `user_bash`
 
@@ -367,6 +367,92 @@ unit dispatch
 Each model gains an optional capability profile with numeric scores (0.0-1.0) across dimensions like coding, debugging, research, long-context, and instruction-following. Task requirements are computed dynamically from unit type and `TaskMetadata` (file counts, dependency counts, tags, complexity keywords). The selection pipeline scores eligible models against the requirement vector and picks the best match.
 
 **Relationship to ADR-003:** ADR-003 reduced the number of dispatch units per milestone. ADR-004 makes each remaining unit smarter by routing to the most capable model for that specific kind of work, rather than defaulting to the cheapest in the tier.
+
+### ADR-007: Model Catalog Split
+
+**Status:** Implemented (v2.62.0)
+
+**Problem:** The monolithic `models.json` file contained all provider model definitions, capability metadata, and cost tables in a single structure. Adding or updating models required modifying a large, tightly-coupled file, making it difficult for extensions to contribute models and for the registry to stay current.
+
+**Decision:** Split the model catalog into per-provider segments that can be loaded, overridden, and extended independently. Extension-contributed models (e.g., Ollama, Claude Code CLI) register through `pi.registerProvider()` at runtime rather than being baked into the static catalog. Capability metadata (introduced in ADR-004) travels with each model entry rather than being inferred from model ID patterns.
+
+**Impact:** Extensions can register models dynamically without touching the core catalog. The `before_model_select` hook (v2.62.0) gives extensions a chance to intercept and override model selection before each dispatch.
+
+### ADR-008: GSD Tools Over MCP for Provider Parity
+
+**Status:** Implemented (v2.63.0)
+
+**Problem:** GSD workflow tools (plan-milestone, complete-task, etc.) were only accessible through the Pi extension tool system. External MCP clients (Claude Code, Cursor) had no way to invoke GSD's core mutation and query operations, limiting integration depth.
+
+**Decision:** Expose the GSD workflow tool handlers over MCP via `workflow-tools.ts` in the `@gsd-build/mcp-server` package. The transport-neutral handler layer (`workflow-tool-executors.ts` in the GSD extension) separates business logic from transport, allowing the same handler to serve both the extension tool system and the MCP server.
+
+**Impact:** 6 read-only tools were added in v2.63.0 for project state queries. MCP clients can now query milestone status, slice status, and other workflow state. The architecture supports adding mutation tools over MCP in future versions.
+
+---
+
+## LLM Safety Harness and Checkpoint/Rollback (v2.64.0)
+
+The safety harness (`src/resources/extensions/gsd/safety/safety-harness.ts`) is a multi-component damage control system for auto-mode execution. It is enabled by default and individually configurable via PREFERENCES.md.
+
+### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Evidence Collector | `evidence-collector.ts` | Real-time tool call tracking -- records every tool invocation and result during a unit |
+| Destructive Guard | `destructive-guard.ts` | Classifies bash commands by destructive potential (safe, warning, dangerous) |
+| File Change Validator | `file-change-validator.ts` | Post-unit git diff validation against the planned file list |
+| Evidence Cross-Reference | `evidence-cross-ref.ts` | Compares claimed verification evidence against actual tool call records |
+| Git Checkpoint | `git-checkpoint.ts` | Creates pre-unit git checkpoints enabling rollback on failure |
+| Content Validator | `content-validator.ts` | Output quality validation for generated artifacts |
+
+### Configuration
+
+All components are controlled through the `safety_harness` section in PREFERENCES.md:
+
+```yaml
+safety_harness:
+  enabled: true
+  evidence_collection: true
+  file_change_validation: true
+  evidence_cross_reference: true
+  destructive_command_warnings: true
+  content_validation: true
+  checkpoints: true
+  auto_rollback: false
+  timeout_scale_cap: 6
+```
+
+### Integration Points
+
+- **`tool_call` hook**: The evidence collector records every tool invocation.
+- **`tool_result` hook**: The evidence collector records results; the destructive guard warns on dangerous bash commands.
+- **Post-unit phase**: File change validation and evidence cross-referencing run after each unit completes.
+- **Pre-unit phase**: Git checkpoint is created before each unit begins.
+- **`auto_rollback`**: When enabled, automatically rolls back to the checkpoint if post-unit validation fails.
+
+---
+
+## Slice-Level Parallelism (v2.64.0)
+
+v2.64.0 introduced dependency-aware slice-level parallelism. When multiple slices within a milestone have no inter-slice dependencies, they can execute concurrently in separate worktrees.
+
+Key aspects:
+- Parallel dispatch respects the `depends` field in slice definitions.
+- Each parallel worker gets its own worktree and session.
+- Worker model can be overridden independently of the main session model.
+- The `/gsd parallel watch` command provides a native TUI overlay for monitoring worker progress.
+- Commits are scoped to milestone boundaries in parallel mode to prevent cross-contamination.
+
+---
+
+## Workflow Tool Executors (v2.63.0)
+
+`workflow-tool-executors.ts` provides transport-neutral handler functions for GSD workflow operations. These handlers separate business logic from the transport layer (Pi extension tools vs MCP), enabling the same execution logic to serve both:
+
+- **Extension tools**: Called directly from Pi tool `execute()` functions within the GSD extension.
+- **MCP server**: Called from `workflow-tools.ts` in the `@gsd-build/mcp-server` package, which wraps them with Zod schema validation and MCP protocol marshaling.
+
+Exported executors include `executeMilestoneStatus`, `executePlanMilestone`, `executePlanSlice`, `executeReplanSlice`, `executeSummarySave`, and others matching the core GSD tool set.
 
 ---
 
@@ -603,6 +689,10 @@ In v2.56.0, unit tests were switched to compile via esbuild rather than running 
 ### Integration Test Reclassification (v2.56.0)
 
 Also in v2.56.0, tests were reclassified: tests requiring filesystem setup, network access, or process spawning were moved from the unit test suite to the integration test suite. This fixed issues with `node_modules` symlinks in the unit test environment and made the unit test pass more reliable in CI.
+
+### State Machine Regression Suite (v2.66.0)
+
+v2.66.0 added 86+ regression tests covering the 5-wave state machine hardening pass. These tests exercise critical data integrity paths, event log reconciliation, session recovery, atomic write safety, and consistency invariants. The suite includes WAL-safe migration backup tests and adversarial review findings verification.
 
 ---
 

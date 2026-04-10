@@ -28,6 +28,11 @@ The core autonomous execution engine.
 | v2.49.0 | Mar 25 | `--yolo` flag for non-interactive project init; GSD metadata moved to git trailers |
 | v2.50.0 | Mar 26 | 8-question quality gates at planning and completion; parallel gate evaluation |
 | v2.58.0 | Mar 28 | Concurrent invocation guard on `startAuto()` (#2923) |
+| v2.59.0 | Apr 3 | Dynamic routing enabled by default (#3120); codebase map for fresh agent contexts |
+| v2.61.0 | Apr 4 | Stop/backtrack capture classifications for milestone regression (#3488); context optimization with model routing and context masking |
+| v2.65.0 | Apr 7 | Pre-execution plan verification checks; post-execution cross-task consistency checks |
+| v2.66.0 | Apr 8 | Fast path for queued milestone discussion; parallel research slices and parallel milestone validation |
+| v2.67.0 | Apr 9 | Session timeout increased to 120s with recoverable pause (#3767); resilient transient error recovery |
 
 ---
 
@@ -52,6 +57,9 @@ Git worktree-based isolation for auto-mode execution.
 | v2.33.0 | Mar 19 | Resolve main repo root in worktrees for stable identity hash |
 | v2.41.0 | Mar 21 | Merge anchor verification before worktree teardown (#1829) |
 | v2.42.0 | Mar 22 | Pre-merge cleanup: SQUASH_MSG cleanup, guard teardown against uncommitted changes (#1868) |
+| v2.59.0 | Apr 3 | Comprehensive pre-merge cleanup adopted from PR #3322; clean stale MERGE_HEAD before squash merge (#2912) |
+| v2.62.1 | Apr 5 | Gate steer worktree routing on active session; resolve steer overrides to worktree path |
+| v2.66.0 | Apr 8 | Skip current milestone in `syncWorktreeStateBack` to prevent merge conflicts; auto-checkout to main when `isolation:none` finds stale milestone branch |
 
 ---
 
@@ -69,6 +77,9 @@ Session survival and recovery after interruptions.
 | v2.28.0 | Mar 17 | Failure recovery safeguards (atomic writes, OAuth timeouts, RPC exit detection) |
 | v2.32.0 | Mar 19 | Skip crash recovery when auto.lock was written by current process |
 | v2.33.0 | Mar 19 | Actionable recovery guidance in crash info messages |
+| v2.66.0 | Apr 8 | Recover from stale lockfile after crash or SIGKILL; add `createdAt` timestamp and 30s age guard to staleness check |
+| v2.66.1 | Apr 8 | Add escalation and unit-detach guards to finalize timeout handlers; timeout guard around `postUnitPreVerification` |
+| v2.67.0 | Apr 9 | Harden auto merge recovery and session safety; resilient transient error recovery -- defer to Core RetryHandler |
 
 ---
 
@@ -85,6 +96,9 @@ Running multiple workers across milestones simultaneously.
 | v2.27.0 | Mar 17 | Crash recovery for parallel orchestrator (persisted state, PID liveness) |
 | v2.54.0 | Mar 27 | Real-time TUI monitor dashboard with self-healing (#2799) |
 | v2.56.0 | Mar 27 | `/gsd parallel watch` native TUI overlay for worker monitoring (#2806) |
+| v2.59.0 | Apr 3 | Scope commits to milestone boundaries in parallel mode (#3047) |
+| v2.64.0 | Apr 6 | **Slice-level parallelism** with dependency-aware dispatch (#3315) |
+| v2.66.0 | Apr 8 | Parallel research slices and parallel milestone validation; worker model override for parallel milestone workers |
 
 ---
 
@@ -104,6 +118,9 @@ Reducing token consumption and cost management.
 | v2.20.0 | Mar 16 | Context-window budget engine (proportional prompt sizing by relevance) |
 | v2.29.0 | Mar 18 | Token optimization suite (prompt caching, compression, smart context selection); semantic chunking |
 | v2.29.0 | Mar 18 | Cache-ordered prompt assembly and dashboard cache hit rate |
+| v2.61.0 | Apr 4 | GSD context optimization with model routing and context masking |
+| v2.66.0 | Apr 8 | Trim `promptGuidelines` to 1 line to reduce per-turn token cost |
+| v2.67.0 | Apr 9 | **M005: Tiered Context Injection** -- relevance-scoped context with 65%+ reduction |
 
 ---
 
@@ -125,6 +142,10 @@ Selecting and routing to different models based on context.
 | v2.30.0 | Mar 18 | Two-step provider-then-model picker in preferences wizard |
 | v2.38.0 | Mar 20 | ADR-004 -- derived-graph reactive task execution (#1546) |
 | v2.52.0 | Mar 27 | Replace model-ID pattern matching with capability metadata (#2548) |
+| v2.59.0 | Apr 3 | Enable dynamic routing by default (#3120); resolve bare model IDs to anthropic over claude-code provider |
+| v2.62.0 | Apr 4 | **Capability-aware model routing:** fire `before_model_select` hook, STEP 2 capability scoring, `taskMetadata` extraction, capability types/data tables/scoring functions |
+| v2.64.0 | Apr 6 | Harden flat-rate routing guard against alias/resolution gaps; disable dynamic model routing for flat-rate providers |
+| v2.66.0 | Apr 8 | Reclassify planning phases from standard to heavy tier |
 
 ---
 
@@ -144,6 +165,8 @@ Automated verification of task outputs.
 | v2.27.0 | Mar 17 | **Verification enforcement gate** for milestone completion |
 | v2.29.0 | Mar 18 | Per-milestone depth verification + queue-flow write-gate |
 | v2.29.0 | Mar 18 | Non-blocking verification gate for auto-discovered commands |
+| v2.65.0 | Apr 7 | Wire blocking behavior and strict mode for enhanced verification; pre-execution plan verification checks; post-execution cross-task consistency checks |
+| v2.66.0 | Apr 8 | Validate depth verification answer before unlocking write-gate; add verification gate to `complete-slice` tool; tighten `verifyExpectedArtifact` to prevent rogue-write false positives |
 
 ---
 
@@ -160,6 +183,8 @@ Discovery, loading, and authoring of skills.
 | v2.30.0 | Mar 18 | **Built-in skill authoring system** (ADR-003); `create-gsd-extension` skill |
 | v2.40.0 | Mar 20 | Skill tool resolution for automatic skill activation (#1661) |
 | v2.51.0 | Mar 26 | 30 skill packs with 40+ curated skills; `~/.agents/skills/` as primary directory |
+| v2.60.0 | Apr 4 | `/btw` skill -- ephemeral side questions from conversation context |
+| v2.64.0 | Apr 6 | Add Claude Code official skill directories to skill resolution |
 
 ---
 
@@ -178,6 +203,8 @@ Progress visualization and monitoring.
 | v2.26.0 | Mar 17 | Discussion status indicators in `/gsd discuss` |
 | v2.30.0 | Mar 18 | Model health indicator in auto-mode progress widget |
 | v2.32.0 | Mar 19 | Always-on health widget; visualizer health tab expansion |
+| v2.59.0 | Apr 3 | Widget: last commit display and dashboard layout improvements (#3226) |
+| v2.66.0 | Apr 8 | `/gsd show-config` command; reactive graph diagnostics |
 
 ---
 
@@ -197,6 +224,8 @@ Non-interactive execution for CI, scripts, and automation.
 | v2.54.0 | Mar 27 | Headless integration hardening and release (#2811) |
 | v2.55.0 | Mar 27 | Colorized verbose output with thinking, phases, cost, and durations (#2886); text mode observability |
 | v2.57.0 | Mar 28 | `--resume` flag for session ID prefix matching; text mode shows tool calls |
+| v2.59.0 | Apr 3 | Stream full text and thinking output in headless verbose mode (#2934) |
+| v2.65.0 | Apr 7 | Treat discuss and plan as multi-turn commands in headless |
 
 ---
 
@@ -224,6 +253,8 @@ Routing decisions to humans via messaging platforms.
 | v2.18.0 | Mar 16 | Remote questions onboarding crash fix |
 | v2.19.0 | Mar 16 | Discord integration parity with Slack |
 | v2.20.0 | Mar 16 | **Telegram remote questions** added alongside Slack/Discord |
+| v2.62.0 | Apr 4 | Fire configured channels in interactive mode |
+| v2.67.0 | Apr 9 | Cancel local TUI when remote answer wins the race; race local TUI against remote channel instead of remote-only routing |
 
 ---
 
@@ -251,6 +282,7 @@ Integration with Visual Studio Code.
 | v2.23.0 | Mar 16 | **Introduced:** full VS Code extension with chat participant, RPC integration, marketplace publishing under FluxLabs publisher |
 | v2.52.0 | Mar 27 | Phase 1: status bar, file decorations, bash terminal, session tree, conversation history, code lens (#2651) |
 | v2.53.0 | Mar 27 | Phase 2: activity feed, workflow controls, session forking, enhanced code lens (#2656) |
+| v2.59.0 | Apr 3 | Phase 3: sidebar redesign, SCM provider, checkpoints, diagnostics |
 
 ---
 
@@ -305,6 +337,9 @@ MCP server and client integration.
 | v2.29.0 | Mar 18 | Per-project MCP config support (`.gsd/mcp.json`) |
 | v2.30.0 | Mar 18 | Replaced MCPorter with native MCP client |
 | v2.45.0 | Mar 25 | `/gsd mcp` command for MCP server status and connectivity (#2362) |
+| v2.63.0 | Apr 5 | **MCP-server: 6 read-only tools** for project state queries (#3515) |
+| v2.64.0 | Apr 6 | MCP-client: add OAuth auth provider for HTTP transport (#3295) |
+| v2.66.0 | Apr 8 | Use `createRequire` to resolve SDK wildcard subpath imports |
 
 ---
 
@@ -324,6 +359,9 @@ Runtime health checks and debugging.
 | v2.39.0 | Mar 20 | 13 new doctor enhancements (#1583) |
 | v2.40.0 | Mar 20 | Health check phase 2: real-time doctor issue visibility across widget, visualizer, and HTML reports (#1644) |
 | v2.41.0 | Mar 21 | Worktree lifecycle checks, cleanup consolidation, enhanced `/worktree list` (#1814) |
+| v2.59.0 | Apr 3 | Stale commit safety check with GSD snapshot and auto-cleanup; harden codebase-map |
+| v2.62.0 | Apr 4 | Add codebase validation in `validatePreferences`; harden audit log persistence -- errors-only, sanitized |
+| v2.66.1 | Apr 8 | Orphaned milestone branch audit at auto-mode bootstrap |
 
 ---
 
@@ -385,6 +423,8 @@ Browser-based UI for GSD.
 | v2.52.0 | Mar 27 | Dark mode contrast improvements (#2734); auth token gate with synthetic 401, unauthenticated boot state, and recovery screen (#2740) |
 | v2.56.0 | Mar 27 | Light theme terminal contrast improvements (#2819) |
 | v2.58.0 | Mar 28 | Fall back to project totals when dashboard metrics are zero (#2847); skip shutdown in daemon mode (#2842) |
+| v2.64.0 | Apr 6 | Remove 200-column cap on welcome screen width; use `safePackageRootFromImportUrl` for cross-platform package root |
+| v2.65.0 | Apr 7 | Persistent notification panel with TUI overlay, widget, and web API |
 
 ---
 
@@ -399,6 +439,9 @@ Tool-driven write-side state transitions backed by SQLite.
 | v2.46.0 | Mar 25 | Single-writer state engine v2 -- discipline layer on DB architecture; v3 -- state machine guards, actor identity, reversibility |
 | v2.46.0 | Mar 25 | Workflow-logger wired into engine, tool, manifest, and reconcile paths (#2494) |
 | v2.52.0 | Mar 27 | Comprehensive SQLite audit fixes -- indexes, caching, safety, reconciliation; schema v11 |
+| v2.59.0 | Apr 3 | Migrate unit ownership from JSON to SQLite to eliminate read-modify-write race (#3061) |
+| v2.63.0 | Apr 5 | Delete orphaned WAL/SHM files alongside empty `gsd.db` (#2478); wrap saves in transaction to prevent ID races |
+| v2.66.0 | Apr 8 | WAL-safe migration backup; critical state machine data integrity fixes (5 waves); 9 resilience fixes + 86 regression tests (#3161) |
 
 ---
 
@@ -432,6 +475,8 @@ Task-capability based model selection (ADR-004).
 |---------|------|-----------|
 | v2.38.0 | Mar 20 | ADR-004 -- derived-graph reactive task execution (#1546) |
 | v2.52.0 | Mar 27 | **Introduced:** replace model-ID pattern matching with capability metadata (#2548) |
+| v2.62.0 | Apr 4 | **Full system:** capability types, data tables, scoring functions; `BeforeModelSelectEvent` extension API; `taskMetadata` extraction and STEP 2 capability scoring; verbose scoring output and capability overrides |
+| v2.66.0 | Apr 8 | `subagent_model` config for reactive graph; worker model override for parallel milestone workers |
 
 ---
 
@@ -551,6 +596,8 @@ External tool execution mode via Claude Code CLI.
 |---------|------|-----------|
 | v2.44.0 | Mar 24 | Support for non-API-key provider extensions like Claude Code CLI (#2382) |
 | v2.47.0 | Mar 25 | **Introduced:** `externalToolExecution` mode for external providers; Claude Code CLI provider extension |
+| v2.64.0 | Apr 6 | Make claude-code provider stateful with full context and sidechain events (#2859) (#3254) |
+| v2.67.0 | Apr 9 | Use native Windows claude lookup; guard claude-code fallback to anthropic provider only; route Anthropic subscription users through Claude Code CLI (#3772) |
 
 ---
 
@@ -584,6 +631,7 @@ Web search integration and budget management.
 | v2.5.0 | Mar 12 | Native Anthropic web search |
 | v2.37.0 | Mar 20 | Session-level search budget to prevent unbounded native web search (#1529) |
 | v2.50.0 | Mar 26 | Enforce hard search budget and survive context compaction |
+| v2.67.0 | Apr 9 | Prompts: harden non-bypassable gates and exclude dot-folders from scanning |
 
 ---
 
@@ -597,6 +645,79 @@ Continuous integration and delivery pipeline.
 | v2.38.0 | Mar 20 | Reduce GitHub Actions minutes ~60-70% (~10k to ~3-4k/month) (#1552) |
 | v2.41.0 | Mar 21 | Skip build/test for docs-only PRs; prompt injection scan (#1699) |
 | v2.42.0 | Mar 22 | PR risk checker -- classify changed files by system and surface risk level (#1930) |
+
+---
+
+## LLM Safety Harness
+
+Damage control mechanisms for auto-mode LLM execution.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.64.0 | Apr 6 | **Introduced:** LLM safety harness for auto-mode damage control |
+| v2.66.0 | Apr 8 | Adversarial review waves 1-3 hardening; write safety -- atomic writes and randomized tmp paths; session and recovery robustness |
+| v2.67.0 | Apr 9 | Fail closed for discussion gate enforcement; harden non-bypassable gates |
+
+---
+
+## Ollama / Local LLM Support
+
+First-class support for local LLM inference via Ollama.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.59.0 | Apr 3 | **Introduced:** Ollama extension for first-class local LLM support (#3371) |
+| v2.64.0 | Apr 6 | Native `/api/chat` provider with full option exposure; register `models.json` providers and await Ollama probe in headless mode; use apiKey auth mode to avoid `streamSimple` crash |
+
+---
+
+## MCP Server (Read-Only Tools)
+
+GSD as an MCP server exposing project state queries.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.22.0 | Mar 16 | MCP server mode (`--mode mcp`) |
+| v2.63.0 | Apr 5 | **Introduced:** 6 read-only tools for project state queries (#3515) |
+| v2.64.0 | Apr 6 | OAuth auth provider for MCP HTTP transport (#3295) |
+
+---
+
+## Notification System
+
+Persistent notifications across TUI, widget, and web surfaces.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.65.0 | Apr 7 | **Introduced:** persistent notification panel with TUI overlay, widget, and web API |
+| v2.65.0 | Apr 7 | Wrap long messages and fit overlay to content; backdrop dimming and viewport padding; prevent foreign lock deletion |
+
+---
+
+## Context Engineering
+
+Optimized context injection and scope management.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.59.0 | Apr 3 | Codebase map -- structural orientation for fresh agent contexts |
+| v2.61.0 | Apr 4 | GSD context optimization with model routing and context masking |
+| v2.64.0 | Apr 6 | Inject `S##-CONTEXT.md` from slice discussion into all prompt builders |
+| v2.67.0 | Apr 9 | **R005:** decision scope cascade -- derive scope from slice metadata |
+| v2.67.0 | Apr 9 | **M005: Tiered Context Injection** -- relevance-scoped context with 65%+ reduction |
+
+---
+
+## Write Gate and Verification
+
+Depth verification, write-gate enforcement, and artifact verification.
+
+| Version | Date | Evolution |
+|---------|------|-----------|
+| v2.29.0 | Mar 18 | Per-milestone depth verification + queue-flow write-gate |
+| v2.65.0 | Apr 7 | Wire blocking behavior and strict mode for enhanced verification; `enhanced_verification` preferences added to `mergePreferences` |
+| v2.66.0 | Apr 8 | Validate depth verification answer before unlocking write-gate; add verification gate to `complete-slice` tool |
+| v2.67.0 | Apr 9 | Mechanical enforcement for discussion question gates |
 
 ---
 
@@ -699,3 +820,27 @@ Compact view of when each major feature first appeared:
 | `/gsd parallel watch` | v2.56.0 | Mar 27 |
 | Daemon and Discord bot | v2.57.0 | Mar 28 |
 | Concurrent invocation guard | v2.58.0 | Mar 28 |
+| Ollama local LLM extension | v2.59.0 | Apr 3 |
+| Codebase map | v2.59.0 | Apr 3 |
+| Dynamic routing default | v2.59.0 | Apr 3 |
+| VS Code extension phase 3 | v2.59.0 | Apr 3 |
+| Stale commit doctor check | v2.59.0 | Apr 3 |
+| `/btw` skill | v2.60.0 | Apr 4 |
+| Stop/backtrack capture | v2.61.0 | Apr 4 |
+| Context optimization | v2.61.0 | Apr 4 |
+| Capability-aware model routing (full) | v2.62.0 | Apr 4 |
+| `/gsd codebase` enhancements | v2.62.0 | Apr 4 |
+| MCP server read-only tools | v2.63.0 | Apr 5 |
+| LLM safety harness | v2.64.0 | Apr 6 |
+| Native Ollama provider | v2.64.0 | Apr 6 |
+| Slice-level parallelism | v2.64.0 | Apr 6 |
+| MCP OAuth auth provider | v2.64.0 | Apr 6 |
+| Notification system | v2.65.0 | Apr 7 |
+| Enhanced verification (strict mode) | v2.65.0 | Apr 7 |
+| Pre/post-execution checks | v2.65.0 | Apr 7 |
+| Parallel research slices | v2.66.0 | Apr 8 |
+| `/gsd show-config` | v2.66.0 | Apr 8 |
+| Graph diagnostics | v2.66.0 | Apr 8 |
+| Adversarial review hardening (5 waves) | v2.66.0 | Apr 8 |
+| R005 decision scope cascade | v2.67.0 | Apr 9 |
+| M005 tiered context injection | v2.67.0 | Apr 9 |

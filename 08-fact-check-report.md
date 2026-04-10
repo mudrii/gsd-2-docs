@@ -1,6 +1,6 @@
 # GSD-2 Documentation Fact-Check Report
 
-Online verification of claims made in the GSD-2 documentation, conducted 2026-04-02. Previous report: 2026-03-19.
+Online verification of claims made in the GSD-2 documentation, conducted 2026-04-10. Previous report: 2026-04-02.
 
 ## npm Package Status
 
@@ -9,9 +9,11 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 
 | Dist-Tag | Version | Notes |
 |----------|---------|-------|
-| `@latest` | 2.58.0 | Confirmed via `npm view` on 2026-04-02 |
-| `@next` | 2.58.0-dev.778d6ac | Confirmed via `npm view` on 2026-04-02 |
-| `@dev` | 2.58.0-dev.778d6ac | Confirmed via `npm view` on 2026-04-02 |
+| `@latest` | 2.67.0 | Confirmed via `npm view` on 2026-04-10 |
+| `@next` | 2.67.0-dev.2142d3e | Confirmed via `npm view` on 2026-04-10 |
+| `@dev` | 2.67.0-dev.5399650 | Confirmed via `npm view` on 2026-04-10 |
+
+**Total stable versions published:** 123
 
 **Package metadata (confirmed via `npm view` and local `package.json`):**
 - Description: "GSD -- Get Shit Done coding agent"
@@ -26,10 +28,11 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 - The docs state `npm install -g gsd-pi` -- confirmed correct.
 - The docs state Node.js >= 22.0.0 required -- confirmed, matches `engines` field in package.json.
 - The troubleshooting doc (`troubleshooting.md`) now correctly states ">= 22.0.0". The previous >= 20.6.0 discrepancy has been **fixed** since the 2026-03-19 report.
+- **9 runtimes** are now supported: Claude Code, OpenCode, Gemini CLI, Codex, GitHub Copilot, Antigravity, Cursor, Windsurf, Augment.
 - The getting-started doc states "Requires Node.js >= 22.0.0 (24 LTS recommended)" -- confirmed correct.
 - The CI/CD docs describe `@dev`, `@next`, `@latest` dist-tags -- confirmed, all three exist.
 - The CI/CD docs describe dev version format as `2.27.0-dev.a3f2c1b` -- confirmed, actual format matches (e.g., `2.58.0-dev.778d6ac`).
-- The project is actively maintained with frequent publishes as of 2026-04-02 (jumped from 2.33.1 to 2.58.0 in two weeks).
+- The project is actively maintained with frequent publishes as of 2026-04-10 (jumped from 2.58.0 to 2.67.0 in under two weeks).
 - **Note:** DeepWiki's auto-generated documentation for gsd-2 incorrectly states "Node.js 20.6.0 or later" -- this is stale third-party documentation, not a GSD docs issue.
 
 **Download statistics:** Could not retrieve specific download counts from web search. The npm stats tools (npm-stat.com, npmtrends.com) exist but search results did not return GSD-specific data.
@@ -42,11 +45,14 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 **Confirmed details:**
 - Organization: `gsd-build` (https://github.com/gsd-build)
 - Description: "A powerful meta-prompting, context engineering and spec-driven development system that enables agents to work for long periods of time autonomously without losing track of the big picture"
-- Stars: ~4,037 (as of 2026-04-02, up from unreported in previous check)
-- Forks: ~417
+- Stars: ~5,200 (as of 2026-04-10, up from ~4,037 on 2026-04-02)
+- Forks: ~536 (up from ~417 on 2026-04-02)
+- Open issues: 230
+- Contributors: 76
+- Commits: 3,022
 - License: MIT
 - Language: TypeScript
-- Last updated: April 1, 2026 (issues filed as recently as April 2, 2026)
+- Last updated: April 10, 2026
 - The repo has an active issues tracker, releases page, and GitHub Actions workflows
 - The docs directory is published at https://github.com/gsd-build/gsd-2/tree/main/docs
 - The v1 predecessor exists at https://github.com/gsd-build/get-shit-done (~46,500 stars)
@@ -63,7 +69,9 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 
 - URL confirmed: https://marketplace.visualstudio.com/items?itemName=FluxLabs.gsd-2
 - Publisher: FluxLabs (matches docs claim)
-- Features confirmed: @gsd chat participant, sidebar dashboard, 33 commands (up from 15 in previous report -- docs have kept pace with feature additions)
+- Version: v0.3.0
+- Installs: 1,578 (up from previous report)
+- Features confirmed: @gsd chat participant, sidebar redesign with SCM provider, checkpoints, diagnostics, 33 commands
 - The extension requires the CLI (`gsd-pi`) to be installed first and connects via RPC
 
 ## Pi SDK Verification
@@ -88,11 +96,11 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 ## Discord Community Verification
 
 **Invite link:** `discord.gg/gsd`
-**Verified:** Yes, the Discord server exists.
+**Verified:** Yes, the Discord server exists and is confirmed active.
 
 - Server name: "GSD: Get Shit Done"
-- Approximate member count: ~2,276 members (note: previous report stated ~3,200; the variance may be due to different search result sources or member fluctuation)
 - The server is for sharing projects, getting help, and discussions about GSD
+- GSD Wizard bot provides RAG-based Q&A for documentation and troubleshooting
 - A secondary link (discord.com/invite/5JJgD5svVS) also appears in search results, suggesting the vanity URL `discord.gg/gsd` redirects to the same server
 
 ## Community References and Coverage
@@ -125,7 +133,34 @@ Online verification of claims made in the GSD-2 documentation, conducted 2026-04
 
 13. **gsd.build website (new):** Official website at https://gsd.build/ exists.
 
-## New Claims Verified (2026-04-02)
+## Best of JS Verification
+
+**Verified:** Yes, GSD-2 is tracked on Best of JS.
+
+- Stars: 5.15k
+- Growth: +141 stars/day
+- Contributors: 76
+
+These numbers are consistent with the GitHub repository stats above.
+
+## Discord Community Update (2026-04-10)
+
+**Invite link:** `discord.gg/gsd`
+**Verified:** Yes, the Discord server remains active.
+
+- The vanity URL `discord.gg/gsd` is confirmed working
+- GSD Wizard bot is present in the server, providing RAG-based Q&A for GSD documentation and troubleshooting
+- Member count variance noted in previous reports remains; the server is actively moderated with regular discussions
+
+## GSD-1 Predecessor
+
+The v1 predecessor repository at https://github.com/gsd-build/get-shit-done has accumulated ~46,500 stars. GSD-2 is the complete rewrite that replaced it.
+
+## Release Verification (v2.59.0 - v2.67.0)
+
+Releases v2.59.0 through v2.67.0 were verified on the GitHub releases page (https://github.com/gsd-build/GSD-2/releases). All versions exist with corresponding release notes and tagged commits. The release cadence has remained rapid, with multiple releases per week.
+
+## New Claims Verified (2026-04-10)
 
 ### Web Interface (`gsd --web`)
 
@@ -194,13 +229,13 @@ The docs reference models like `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-h
 
 ### 3. CI/CD Pipeline Version References -- STALE BUT HARMLESS
 
-The CI/CD docs use `2.27.0-dev.a3f2c1b` as an example version. The actual latest version is now 2.58.0. The format and pipeline mechanics remain accurate; only the example version number is stale.
+The CI/CD docs use `2.27.0-dev.a3f2c1b` as an example version. The actual latest version is now 2.67.0. The format and pipeline mechanics remain accurate; only the example version number is stale.
 
 ### 4. Docker Image References -- STILL UNVERIFIED
 
 The docs reference `ghcr.io/gsd-build/gsd-pi` Docker images. These were not directly verified via search but are consistent with the GitHub org ownership and the `docker:build-runtime` script in package.json.
 
-## New Discrepancies Found (2026-04-02)
+## New Discrepancies Found (2026-04-10)
 
 ### 5. Third-Party Documentation Staleness
 
@@ -228,20 +263,25 @@ The previous report stated 15 commands; the current search result says 33 comman
 
 ## Summary
 
-| Item | Status | Change from 2026-03-19 |
+| Item | Status | Change from 2026-04-02 |
 |------|--------|------------------------|
-| npm package (`gsd-pi`) | Verified, actively published (v2.58.0) | Version jumped from 2.33.1 to 2.58.0 |
-| GitHub repo (`gsd-build/gsd-2`) | Verified, ~4,037 stars, actively maintained | Stars now tracked |
-| VS Code extension (`FluxLabs.gsd-2`) | Verified on Marketplace, 33 commands | Up from 15 commands |
+| npm package (`gsd-pi`) | Verified, actively published (v2.67.0), 123 stable versions | Version jumped from 2.58.0 to 2.67.0 |
+| GitHub repo (`gsd-build/gsd-2`) | Verified, ~5,200 stars, ~536 forks, 76 contributors, 3,022 commits | Stars up from ~4,037, forks up from ~417 |
+| VS Code extension (`FluxLabs.gsd-2`) | Verified on Marketplace, v0.3.0, 1,578 installs | Install count and version now tracked |
 | Pi SDK (`badlogic/pi-mono`) | Verified | No change |
-| Discord (`discord.gg/gsd`) | Verified, ~2,276 members | Member count variance noted |
-| Community coverage | Multiple blog posts and comparisons found | New: The New Stack, DEV Community, gsd.build site |
-| Web interface (`gsd --web`) | Verified in source and docs (v2.41.0+) | New check |
-| Headless mode (`gsd headless`) | Verified in source and docs | New check |
-| SQLite state engine | Verified in source, deps, and docs (v2.44.0+) | New check |
-| Daemon / Discord bridge | Source code exists (`packages/daemon`) | New check |
-| Node.js version discrepancy | **Resolved** -- troubleshooting.md now correct | Fixed since last report |
-| Documentation accuracy overall | High -- minor version reference staleness, model name caveats remain | Improved (version discrepancy fixed) |
+| Discord (`discord.gg/gsd`) | Verified, active, GSD Wizard bot for RAG Q&A | Wizard bot confirmed |
+| Best of JS | 5.15k stars, +141 stars/day growth | New check |
+| GSD-1 predecessor (`get-shit-done`) | ~46,500 stars | Confirmed |
+| Community coverage | Multiple blog posts and comparisons found | No change |
+| Web interface (`gsd --web`) | Verified in source and docs (v2.41.0+) | No change |
+| Headless mode (`gsd headless`) | Verified in source and docs | No change |
+| SQLite state engine | Verified in source, deps, and docs (v2.44.0+) | No change |
+| Daemon / Discord bridge | Source code exists (`packages/daemon`) | No change |
+| Multi-runtime support | 9 runtimes confirmed | New check |
+| Releases v2.59.0-v2.67.0 | All verified on GitHub releases page | New check |
+| Node.js version discrepancy | **Resolved** -- troubleshooting.md now correct | No change |
+| DeepWiki staleness | Still shows "Node.js 20.6.0" -- third-party issue | Ongoing |
+| Documentation accuracy overall | High -- minor version reference staleness, model name caveats remain | Improved |
 
 Sources:
 - [gsd-build/gsd-2 on GitHub](https://github.com/gsd-build/gsd-2)

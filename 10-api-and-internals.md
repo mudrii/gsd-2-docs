@@ -568,6 +568,8 @@ pi.unregisterProvider("my-proxy");
 - **Capability metadata replacing model-ID pattern matching (v2.52.0).** Model routing no longer infers capabilities (reasoning, vision, context window) from model ID string patterns. Instead, each model entry carries explicit capability metadata that the router reads directly.
 - **GLM-5.1 on Z.AI (v2.57.0).** GLM-5.1 was added to the Z.AI provider in the custom models registry.
 - **Ollama extension for local LLMs (v2.58.0).** An Ollama provider extension enables local LLM inference through a running Ollama instance.
+- **Ollama native /api/chat provider (v2.64.0).** The Ollama extension was upgraded to a native provider using the `/api/chat` endpoint with full option exposure, replacing the earlier OpenAI-compatible wrapper.
+- **OAuth auth provider for MCP HTTP transport (v2.64.0).** The MCP client extension gained an OAuth authentication provider for HTTP-based MCP transports, enabling authenticated connections to remote MCP servers that require OAuth flows.
 
 ### Reacting to Model Changes
 
@@ -579,6 +581,22 @@ pi.on("model_select", async (event, ctx) => {
   ctx.ui.setStatus("model", `${event.model.provider}/${event.model.id}`);
 });
 ```
+
+### Intercepting Model Selection (v2.62.0)
+
+The `before_model_select` hook fires before each model selection in the capability-aware routing pipeline (ADR-004). Extensions can inspect the proposed model, the task requirements, and the scoring results, and optionally override the selection.
+
+```typescript
+pi.on("before_model_select", async (event, ctx) => {
+  // event.proposedModel -- the model the router selected
+  // event.taskRequirements -- computed requirement vector for this unit
+  // event.eligibleModels -- all models that passed tier filtering
+  // event.scores -- scoring breakdown per eligible model
+  // Return { model: alternateModel } to override, or undefined to accept
+});
+```
+
+This hook is registered as a placeholder in the GSD extension (`register-hooks.ts`) and can be overridden by user extensions. The verbose scoring output (enabled via `GSD_VERBOSE_ROUTING=1`) logs the full scoring breakdown for debugging.
 
 ---
 
@@ -723,3 +741,164 @@ pi.events.on("my-extension:data-ready", (data) => {
   // handle data
 });
 ```
+
+---
+
+## Workflow MCP Tools (v2.63.0)
+
+The `@gsd-build/mcp-server` package exposes GSD workflow operations over MCP via `workflow-tools.ts`. This enables external MCP clients (Claude Code, Cursor, etc.) to query and mutate GSD project state.
+
+### Architecture
+
+The tool layer is split into two files:
+
+| File | Package | Role |
+|------|---------|------|
+| `workflow-tool-executors.ts` | GSD extension (`src/resources/extensions/gsd/tools/`) | Transport-neutral business logic -- pure functions that operate on the SQLite DB |
+| `workflow-tools.ts` | `@gsd-build/mcp-server` (`packages/mcp-server/src/`) | MCP transport adapter -- Zod schema validation, parameter marshaling, MCP protocol response formatting |
+
+### Available Tools (v2.63.0)
+
+6 read-only tools for project state queries:
+
+- `gsd_milestone_status` -- query the status of a specific milestone
+- `gsd_plan_milestone` -- read the full plan for a milestone (slices, tasks, dependencies)
+- `gsd_plan_slice` -- read the plan for a specific slice (tasks, criteria)
+- `gsd_replan_slice` -- read replan state for a slice
+- `gsd_summary_save` -- save summary artifacts (SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT)
+- Additional mutation tools for complete-task, complete-slice, complete-milestone, validate-milestone, reassess-roadmap
+
+### Type Contract
+
+All executors return a `ToolExecutionResult`:
+
+```typescript
+interface ToolExecutionResult {
+  content: Array<{ type: "text"; text: string }>;
+  details: Record<string, unknown>;
+}
+```
+
+The MCP adapter maps this to the MCP protocol response format. Error states (DB unavailable, invalid parameters, write-gate blocks) are returned as structured error responses rather than thrown exceptions.
+
+---
+
+## Safety Harness API (v2.64.0)
+
+The safety harness (`src/resources/extensions/gsd/safety/safety-harness.ts`) exports a public API for damage control during auto-mode execution.
+
+### Configuration API
+
+```typescript
+import {
+  resolveSafetyHarnessConfig,
+  isHarnessEnabled,
+} from "./safety/safety-harness.js";
+
+// Resolve full config from raw preferences (missing fields use defaults)
+const config = resolveSafetyHarnessConfig(preferences.safety_harness);
+
+// Fast gate check -- used at hook registration and phase integration points
+if (isHarnessEnabled(preferences.safety_harness)) {
+  // register safety hooks
+}
+```
+
+### Evidence Collection API
+
+```typescript
+import {
+  resetEvidence,
+  getEvidence,
+  getBashEvidence,
+  getFilePaths,
+  recordToolCall,
+  recordToolResult,
+} from "./safety/safety-harness.js";
+
+// Reset evidence at the start of each unit
+resetEvidence();
+
+// Record a tool invocation (called from tool_call hook)
+recordToolCall(toolName, toolInput);
+
+// Record a tool result (called from tool_result hook)
+recordToolResult(toolName, toolResult);
+
+// Query collected evidence
+const allEvidence: EvidenceEntry[] = getEvidence();
+const bashCmds: BashEvidence[] = getBashEvidence();
+const touchedFiles: string[] = getFilePaths();
+```
+
+### Destructive Command Classification
+
+```typescript
+import { classifyCommand } from "./safety/safety-harness.js";
+
+const result: CommandClassification = classifyCommand("rm -rf /tmp/build");
+// result.level: "safe" | "warning" | "dangerous"
+// result.reason: human-readable explanation
+```
+
+### File Change Validation
+
+```typescript
+import { validateFileChanges } from "./safety/safety-harness.js";
+
+const audit: FileChangeAudit = await validateFileChanges(basePath, plannedFiles);
+// audit.violations: FileViolation[] -- files changed outside the plan
+// audit.unplannedChanges: string[] -- unexpected file modifications
+```
+
+### Evidence Cross-Reference
+
+```typescript
+import { crossReferenceEvidence } from "./safety/safety-harness.js";
+
+const mismatches: EvidenceMismatch[] = crossReferenceEvidence(
+  claimedEvidence,
+  collectedEvidence,
+);
+// Each mismatch identifies a claim not backed by actual tool call records
+```
+
+---
+
+## Notification Panel API (v2.65.0)
+
+The notification panel provides persistent notifications via TUI overlay, widget, and web API.
+
+### ctx.ui.notify
+
+The existing `ctx.ui.notify()` method was extended with support for persistent notifications that survive across turns:
+
+```typescript
+// Transient notification (existing behavior)
+ctx.ui.notify("Task completed", "info");
+
+// The notification panel aggregates notifications from the store
+// and renders them as a TUI overlay or widget depending on context
+```
+
+### ctx.ui.setWidget
+
+Widgets can be placed above or below the editor to display persistent status:
+
+```typescript
+// Set a widget with rendered lines
+ctx.ui.setWidget("notifications", ["Line 1", "Line 2"]);
+
+// Remove a widget
+ctx.ui.setWidget("notifications", undefined);
+```
+
+### Notification Store
+
+The notification store (`notification-store.ts`) manages notification lifecycle:
+
+- Notifications are stored with timestamps and severity levels.
+- The overlay (`notification-overlay.ts`) renders notifications as a floating panel with backdrop dimming and content-fit sizing.
+- The widget (`notification-widget.ts`) provides a compact inline view.
+- The web API surfaces notifications through the existing web interface event stream.
+- Lock-based ownership prevents foreign lock deletion when multiple sessions are active.

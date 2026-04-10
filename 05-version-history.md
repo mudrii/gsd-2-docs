@@ -1692,17 +1692,487 @@ Introduced VS Code extension phase 1 and RPC v2.
 
 ---
 
+## Era 21: Safety, Parallelism, and Context Engineering (v2.59.0 - v2.67.0) — April 3-9, 2026
+
+LLM safety harness, Ollama/local LLM support, MCP server read-only tools, capability-aware model routing, notification system, context engineering with tiered injection, write gate and verification hardening, parallel research slices, /btw skill, codebase map, stale commit doctor check, sidebar redesign (VS Code), persistent notification panel, adversarial review waves.
+
+### v2.59.0 — 2026-04-03 -- KEY RELEASE
+
+Introduced Ollama extension, codebase map, stale commit doctor check, and dynamic routing enabled by default.
+
+**Added:**
+- Ollama extension for first-class local LLM support (#3371)
+- Doctor: stale commit safety check with GSD snapshot and auto-cleanup
+- Extensions: wire up topological sort and unified registry filtering (#3152)
+- Widget: last commit display and dashboard layout improvements (#3226)
+- Model-routing: enable dynamic routing by default (#3120)
+- VS Code: sidebar redesign, SCM provider, checkpoints, diagnostics [3/3]
+- Splash: add remote channel indicator to welcome screen tools row
+- Stream full text and thinking output in headless verbose mode (#2934)
+- Codebase map -- structural orientation for fresh agent contexts
+
+**Fixed:**
+- Worktree: resolve merge conflict for PR #3322 -- adopt comprehensive pre-merge cleanup
+- Merge: clean stale MERGE_HEAD before squash merge (#2912)
+- State: always run disk-to-DB reconciliation when DB is available (#2631)
+- Git-service: fix merge-base ancestry check and `.gsd/` leakage in snapshot absorption
+- Extensions: update `provides.hooks` in 7 extension manifests to match actual registrations (#3157)
+- Surface `nativeCommit` errors in `reconcileMergeState` instead of silently swallowing (#3052)
+- Parallel: scope commits to milestone boundaries in parallel mode (#3047)
+- Add `windowsHide` to all web-mode subprocess spawns (#2628) (#3046)
+- Skip auto-mode pause on empty-content aborted messages (#2695) (#3045)
+- Detect and remove nested `.git` dirs in worktree cleanup to prevent data loss (#3044)
+- Prevent data loss when git isolation default changes (#2625) (#3043)
+- Read-tool: clamp offset to file bounds instead of throwing (#3007) (#3042)
+- Preserve queued milestones with worktrees in ghost detection (#3041)
+- Compaction: add chunked fallback when messages exceed model context window (#3038)
+- Preserve interactive terminal across tab switches and project changes (#3055)
+- Call `cleanupQuickBranch` on `turn_end` to squash-merge quick branch back (#3054)
+- Align `run-uat` artifact path to ASSESSMENT, preventing false stuck retries (#3053)
+- Replace invalid Discord invite links with canonical URL (#3056)
+- Add Windows shell guard to remaining spawn sites (#3058)
+- Route `gsd auto` to headless runner to prevent hang on piped stdin/stdout (#3057)
+- Respect `.gitignore` for `.gsd/` in rethink prompt (#3059)
+- Migrate unit ownership from JSON to SQLite to eliminate read-modify-write race (#3061)
+- Roadmap: handle numbered, bracketed, and indented prose H3 headers in slice parser (#3063)
+- Add `worktree-merge` to `resolveModelWithFallbacksForUnit` switch and update `KNOWN_UNIT_TYPES` (#3066)
+- Clean up MERGE_HEAD on all error paths in `mergeMilestoneToMain` (#2912) (#3068)
+- Prevent LLM from confusing background task output with user input (#3069)
+- Add openai-codex provider and modern OpenAI models to `MODEL_CAPABILITY_TIER` and cost tables (#3070)
+- Preserve active tab when switching projects (#3071)
+- Include project name in desktop notifications (#3072)
+- Recover from many-image dimension overflow by stripping older images (#3075)
+- Resolve bare model IDs to anthropic over claude-code provider (#3076)
+- Auto: move `selectAndApplyModel` before `updateProgressWidget` (#3079)
+- Detect project relocation and recover state without data loss (#3080)
+- Add free-text input to `ask-user-questions` when "None of the above" is selected (#3081)
+- Block work execution during `/gsd queue` mode (#2545) (#3082)
+- Detect worktree basePath in `gsdRoot()` to prevent escaping to project root (#3083)
+- Invalidate stale quick-task captures across milestone boundaries (#3084)
+- Defer model validation until after extensions register (#3089)
+- Repair YAML bullet lists in malformed tool-call JSON (#3090)
+- Unify `SUMMARY.md` render paths for projection fidelity (#3091)
+- Chat mode misrepresents terminal output, looks stuck, omits user messages (#3092)
+- Resolve 4 state corruption bugs in milestone/slice completion (#2945) (#3093)
+- Isolate guided-flow session state and key discussion milestone queries (#2985) (#3094)
+- Guided-flow: route `dispatchWorkflow` through dynamic routing pipeline (#3153)
+- Skip external state migration inside git worktrees (#2970) (#3227)
+- Coerce non-numeric strings in DB columns during manifest serialization (#2962) (#3229)
+- Route `allDiscussed` and zero-slices paths to queued milestone discussion (#3150) (#3230)
+- Use loose equality for null checks in `secure_env_collect` (#2997) (#3231)
+- Prevent prompt explosion from `$'` in template replacement values (#2968) (#3232)
+- Resolve OAuth API key in `buildMemoryLLMCall` via `modelRegistry` (#2959) (#3233)
+- Forensics: read completion status from DB instead of legacy file (#3129) (#3234)
+- Use camelCase parameter names in execute-task and complete-slice prompts (#2933) (#3236)
+- Check bootstrap completeness in init wizard gate, not just `.gsd/` existence (#2942) (#3237)
+- Specify write tool for `PROJECT.md` in milestone/slice prompts (#3238)
+- Widen completing-milestone gate to accept "None required" and similar phrasings (#2931) (#3239)
+- Prevent `ask_user_questions` from poisoning auto-mode dispatch (#2936) (#3240)
+- Guard null `s.currentUnit` in `runUnitPhase` closeout after `stopAuto` race (#2939) (#3241)
+- Replace `web_search` with `search-the-web` in prompts and agent frontmatter (#2920) (#3245)
+- Preserve milestone title in `upsertMilestonePlanning` when DB row pre-exists (#2879) (#3247)
+- Invalidate stale milestone validation on roadmap reassessment (#2957) (#3242)
+- Discuss: add roadmap fallback when DB is open but empty (#2892) (#3244)
+- Integrate Codex and Gemini CLI into provider routes and rate-limit handling (#2922) (#3246)
+- Error-classifier: widen `STREAM_RE` to cover all 7 V8 JSON parse error variants (#2916) (#3243)
+- Prevent git stash from destroying queued milestone CONTEXT files (#2505) (#3273)
+- Skip staleness rebuild in npm tarball installs (#2877) (#3250)
+- Parallel: check worktree DB for milestone completion in merge (#2812) (#3256)
+- Make claude-code provider stateful with full context and sidechain events (#2859) (#3254)
+- Worktree: preserve non-empty `gsd.db` during sync to prevent truncation (#2815) (#3255)
+- Align `@gsd/native` module type with compiled output (#3253)
+- Parse `hook/*` completed-unit keys correctly in forensics + doctor (#2826) (#3252)
+- Copy `mcp.json` into auto-mode worktrees (#2791) (#3251)
+- Add `gsd_requirement_save` and upsert path for requirement updates (#3249)
+- Handle `pause_turn` stop reason to prevent 400 errors with native web search (#2869) (#3248)
+- Use authoritative milestone status in web roadmap (#2807) (#3258)
+- Classify long-context entitlement 429 as `quota_exhausted`, not `rate_limit` (#2803) (#3257)
+- Docs: use `~/.pi/agent/extensions/` for community extension install path (#3131) (#3259)
+- Add disk-to-DB slice reconciliation in `deriveStateFromDb` (#2533) (#3262)
+- Run forensics duplicate detection before investigation (#2704) (#3260)
+- Skip TUI render loop on non-TTY stdout to prevent CPU burn (#3095) (#3263)
+- Persist forensics report context across follow-up turns (#2941) (#3261)
+- Invalidate workspace state on `turn_end` so milestones list stays current (#2706) (#3266)
+- Eliminate 3 recurring doctor audit false positives (#3105) (#3264)
+- Web: reconcile auto-mode state with on-disk lock in dashboard (#2705) (#3265)
+- Treat ghost milestones as ineligible for parallel execution (#2501) (#3268)
+- Redirect auto-mode to headless when stdout is piped (#2732) (#3269)
+- Attempt VACUUM recovery when `initSchema` fails with corrupt freelist (#2519) (#3270)
+- Resolve `db_unavailable` loop in worktree/symlink layouts (#2517) (#3271)
+- Correct OAuth fallback request shape for `google_search` (#2963) (#3272)
+- Prevent UAT stuck-loop and orphaned worktree after milestone completion (#3065)
+- MCP: handle server names with spaces in `mcp_discover` (#3037)
+- Detect markdown body verdicts and guard `plan-milestone` against completed slices (#2960) (#3035)
+- Error-classifier: replace `STREAM_RE` whack-a-mole with catch-all V8 JSON.parse pattern
+- Type `_borderColorKey` as `'dim' | 'bashMode'` to match ThemeColor
+- TUI: comprehensive review -- layout, flow, rendering, and state fixes
+- Harden codebase-map -- bug fixes, UX polish, and expanded tests
+
+**Changed:**
+- State: centralize pipeline logging through workflow logger (#3282)
+- Gitignore: exclude `src/` build artifacts, scratch files, and `.plans/`
+- Complexity: reclassify planning phases from standard to heavy tier
+
+---
+
+### v2.60.0 — 2026-04-04
+
+**Added:**
+- `/btw` skill -- ephemeral side questions from conversation context
+
+**Fixed:**
+- btw: remove LLM-specific references from skill description
+
+---
+
+### v2.61.0 — 2026-04-04
+
+**Added:**
+- Stop/backtrack capture classifications for milestone regression (#3488)
+- GSD context optimization with model routing and context masking
+
+---
+
+### v2.62.0 — 2026-04-04
+
+**Added:**
+- Enhance `/gsd codebase` with preferences, `--collapse-threshold`, and auto-init
+- Fire `before_model_select` hook, add verbose scoring output, load capability overrides
+- Register `before_model_select` placeholder handler in GSD hooks
+- Add `BeforeModelSelectEvent` to extension API and wire emission
+- Wire `taskMetadata` from `selectAndApplyModel` to `resolveModelForComplexity`
+- Insert STEP 2 capability scoring into `resolveModelForComplexity`
+- Add `taskMetadata` to `ClassificationResult` and export `extractTaskMetadata`
+- Add capability types, data tables, and scoring functions to model-router
+
+**Fixed:**
+- Add codebase validation in `validatePreferences` so preferences are not silently dropped
+- Update `db-path-worktree-symlink` test for simplified diagnostic logging
+- Update tests for errors-only audit persistence, fix empty catch blocks
+- Harden audit log persistence -- errors-only, sanitized, demote probe warnings
+- Address adversarial review findings on workflow-logger migration
+- Fail-closed stop guard, harden backtrack parsing, fix prompt params
+- Add diagnostic logging to empty catch blocks in auto-mode
+- LSP: add legacy alias for renamed `kotlin-language-server` key
+- Break infinite notes loop when selecting "None of the above"
+- Align `defaultRoutingConfig` `capability_routing` to `true`
+- Upgrade Kotlin LSP to official `Kotlin/kotlin-lsp`
+- Use correct `RequirementCounts` type fields in edge case tests
+- Remote-questions: fire configured channels in interactive mode
+
+**Changed:**
+- Migrate all catch blocks to centralized workflow-logger
+- Init GSD
+
+---
+
+### v2.62.1 — 2026-04-05
+
+**Fixed:**
+- Gate steer worktree routing on active session, fix messaging
+- Resolve steer overrides to worktree path when worktree is active
+
+---
+
+### v2.63.0 — 2026-04-05
+
+**Added:**
+- MCP-server: add 6 read-only tools for project state queries (#3515)
+
+**Fixed:**
+- Enrich vague diagnostic messages with root-cause context
+- Reset dedup cache between `ask-user-freetext` tests
+- DB: delete orphaned WAL/SHM files alongside empty `gsd.db` (#2478)
+- Prevent auto-wrapup from interrupting in-flight tool calls (#3512)
+- Handle bare model IDs in `resolveDefaultSessionModel` (#3517)
+- Wrap decision and requirement saves in transaction to prevent ID races
+- Prefer `PREFERENCES.md` over `settings.json` for session bootstrap model (#3517)
+- Add Claude Code official skill directories to skill resolution
+- Dedup: hash full question payload, not just IDs
+- Prevent duplicate `ask_user_questions` dispatches with per-turn dedup cache
+- pi-ai: extend `repairToolJson` to handle XML tags and truncated numbers
+- pi-coding-agent: cancel stale retries after model switch
+
+**Changed:**
+- Untrack `.repowise/` and add to `.gitignore`
+
+---
+
+### v2.64.0 — 2026-04-06 -- KEY RELEASE
+
+Introduced LLM safety harness, native Ollama provider, slice-level parallelism, and MCP OAuth.
+
+**Added:**
+- LLM safety harness for auto-mode damage control
+- Ollama: native `/api/chat` provider with full option exposure
+- Parallel: slice-level parallelism with dependency-aware dispatch (#3315)
+- MCP-client: add OAuth auth provider for HTTP transport (#3295)
+
+**Fixed:**
+- UI: remove 200-column cap on welcome screen width
+- Address adversarial review findings for #3576
+- Replace hardcoded agent skill paths with dynamic resolution (#3575)
+- Headless: sync resources and use agent dir for query
+- CLI: show latest version and bypass npm cache in update check
+- Follow CONTRIBUTING standards for #3565
+- Address Codex adversarial review findings for #3565
+- Coerce string arrays to objects in `complete-slice`/`task` tools (#3565)
+- Harden flat-rate routing guard against alias/resolution gaps
+- pi-coding-agent: register `models.json` providers and await Ollama probe in headless mode
+- Ollama: use apiKey auth mode to avoid `streamSimple` crash
+- Disable dynamic model routing for flat-rate providers
+- Address Codex adversarial review findings
+- Prevent LLM from querying `gsd.db` directly via bash (#3541)
+- Seed requirements table from `REQUIREMENTS.md` on first update
+- Inject `S##-CONTEXT.md` from slice discussion into all prompt builders
+- CLI: guard model re-apply against session restore and async rejection
+- pi-coding-agent: resolve model fallback race that ignores configured provider (#3534)
+- Detection: add xcodegen and Xcode bundle support to project detection (#1882)
+- Perf: share jiti module cache across extension loads (#3308)
+- Resource-sync: prune removed bundled subdirectory extensions on upgrade (#1972)
+- Recognize U+2705 checkmark emoji as completion marker in prose roadmaps (#1897)
+- Web: use `safePackageRootFromImportUrl` for cross-platform package root (#1881) (#1893)
+- Isolate `CmuxClient` stdio to prevent TUI hangs in CMUX (#3306)
+- Worktree health check walks parent dirs for monorepo support (#3313)
+- Promote milestone status from `queued` to `active` in `plan-milestone` (#3317)
+- Worktree: correct merge failure notification command from `/complete-milestone` to `/gsd dispatch complete-milestone` (#1901)
+- Detect and block Gemini CLI OAuth tokens used as API keys (#3296)
+- Auto: break retry loop on tool invocation errors (malformed JSON) (#3298)
+- Git: use `git add -u` in symlink `.gsd` fallback to prevent hang (#3299)
+- Handle `complete-slice` context exhaustion to unblock downstream slices (#3300)
+- Cap consecutive tool validation failures to prevent stuck-loop (#3301)
+- Make enrichment tool params optional for limited-toolcall models (#3302)
+- Add filesystem safety guard to `complete-slice.md` (#3304)
+- Extensions: use `bundledExtensionKeys` for conflict detection instead of broken path heuristic (#3305)
+- Scope tools during discuss flows to prevent grammar overflow (#3307)
+- Preferences: warn on silent parse failure for non-frontmatter files (#3310)
+- Track remote-questions in managed-resources manifest (#3312)
+- Auto: add timeout guard for `postUnitPostVerification` in `runFinalize` (#3314)
+- Handle large markdown parameters in `complete-milestone` JSON parsing (#3316)
+- Metrics: deduplicate idle-watchdog entries and fix forensics false-positives (#1973)
+- Prevent milestone/slice artifact rendering corruption (#3293)
+- Doctor: strip `--fix` flag before positional parse (#1919) (#1926)
+- Resolve external-state worktree DB path (#2952) (#3303)
+- Worktree teardown path validation prevents data loss (#3311)
+- Prevent auto-mode from dispatching deferred slices (#3309)
+- Preserve completed slice status on `plan-milestone` re-plan (#3318)
+- Reopen DB on cold resume, recognize heavy check mark (#3319)
+- Dashboard model label shows dispatched model, not stale previous unit (#3320)
+
+**Changed:**
+- Remove copyright line from test file
+- Trim `promptGuidelines` to 1 line to reduce per-turn token cost
+- Web: consolidate subprocess boilerplate into shared runner (#1899)
+
+---
+
+### v2.65.0 — 2026-04-07
+
+**Added:**
+- Persistent notification panel with TUI overlay, widget, and web API
+- Wire blocking behavior and strict mode for enhanced verification
+- Add post-execution cross-task consistency checks
+- Add pre-execution plan verification checks
+
+**Fixed:**
+- Wrap long notification messages and fit overlay to content
+- Remove background color from backdrop, fix message truncation
+- Restore consistent overlay height to prevent ghost artifacts
+- Improve notification overlay backdrop and content-fit sizing
+- Only unlink notification lock when owned, prevent foreign lock deletion
+- Add backdrop dimming and viewport padding to notification overlay
+- Add intent + phase guards to resume context fallback (#3615)
+- Inject task context for unstructured resume prompts (#3615)
+- pi-coding-agent: restore extension tools after session switch (#3616)
+- Agent-loop: schema overload cap ignores bash execution errors (#3618)
+- bg-shell: prevent signal handler accumulation + cap alert queue
+- Coerce plain-string `provides` field to array in `complete-slice` (#3585)
+- Address PR #3468 review findings
+- Persist `autoStartTime` across session resume so elapsed timer survives `/exit`
+- Add `enhanced_verification` preferences to `mergePreferences`
+- Headless: treat discuss and plan as multi-turn commands
+
+**Changed:**
+- Interactive: cap rendered chat components + kill orphan descendants
+- TUI: render-skip, frame isolation, Text cache guard, dispose
+
+---
+
+### v2.66.0 — 2026-04-08 -- KEY RELEASE
+
+Introduced parallel research slices, graph diagnostics, and five waves of adversarial review hardening.
+
+**Added:**
+- Fast path for queued milestone discussion
+- `/gsd show-config` command
+- Reactive: graph diagnostics and `subagent_model` config
+- Dispatch: parallel research slices and parallel milestone validation
+- Parallel: worker model override for parallel milestone workers
+
+**Fixed:**
+- Validate depth verification answer before unlocking write-gate
+- Revert unknown artifact check to warn-and-proceed
+- Add missing `cmd` field to test base `WorkflowEvent`
+- Address remaining adversarial review findings for wave 3
+- Detect concurrent event log growth during reconcile
+- Address adversarial review findings for wave 3
+- Address adversarial review findings for wave 2
+- Address adversarial review findings for wave 1
+- WAL-safe migration backup + stronger regression tests
+- Consistency and cleanup (wave 5/5)
+- Write safety -- atomic writes and randomized tmp paths (wave 4/5)
+- Session and recovery robustness (wave 3/5)
+- Event log and reconciliation robustness (wave 2/5)
+- Critical state machine data integrity fixes (wave 1/5)
+- Remove ecosystem research stub and address adversarial review
+- Suppress model change notification in auto-mode unless verbose
+- Exclude `task.files` from `checkTaskOrdering` to prevent false positives
+- State: skip ghost check for queued milestones in registry build
+- CI: replace empty catch blocks and raw stderr with `logWarning`
+- Logging: add `debugLog` to empty catch in reopen-milestone
+- State-machine: 9 resilience fixes + 86 regression tests (#3161)
+- Add incremental persistence to discuss prompts
+- Replace empty catch with `logWarning` for silent-catch-diagnostics test
+- Test: escape regex metacharacters in skip-by-preference pattern test
+- Test: search for numbered step definitions in prompt ordering test
+- Test: update notes loop test for `notesVisible` guard behavior
+- Test: update action count for note captures now included in results
+- Test: remove extraneous test file from wrong branch
+- Test: update worktree sync tests to use separate milestone IDs
+- Use valid `LogComponent` type for stale branch guard warning
+- Test: update rogue detection test for auto-remediation behavior
+- Test: update stuck-planning test to expect executing after reconciliation
+- Test: update file path consistency tests for inputs-only checking
+- Test: add CONTEXT file to queued milestone ghost detection test
+- Test: update needs-remediation test to expect `validating-milestone` phase
+- Import all-done milestones as complete during DB migration
+- Allow milestone completion when validation skipped by preference
+- Set slice sequence at all three insertion sites
+- Four prompt/runtime fixes for completion and session stability
+- Default `insertMilestone` status to `queued` instead of `active`
+- Suppress repeated frontmatter YAML parse warnings
+- Normalize list inputs in `complete-task` + fix roadmap dep parsing
+- Open DB before status derivation + respect `isolation:none` in quick
+- Add `.bg-shell/` to baseline gitignore patterns
+- TUI: prevent Enter key infinite loop in interview notes mode
+- Provider: handle Enter key to initiate auth setup in provider manager
+- MCP: use `createRequire` to resolve SDK wildcard subpath imports
+- Mark note captures as executed in `executeTriageResolutions`
+- Validate `main_branch` preference exists before using in merge
+- Handle deleted cwd in `projectRoot` to prevent ENOENT crash
+- Skip current milestone in `syncWorktreeStateBack` to prevent merge conflicts
+- Add `structuredQuestionsAvailable` conditional to slice discuss
+- Restore full tool set after discuss flow scoping
+- Tighten `verifyExpectedArtifact` to prevent rogue-write false positives
+- Add verification gate to `complete-slice` tool
+- Fix pre-execution-checks false positives from backticks and `task.files`
+- Stop `renderAllProjections` from overwriting authoritative `PLAN.md`
+- Auto-checkout to main when `isolation:none` finds stale milestone branch
+- Auto-remediate stale slice DB status when SUMMARY exists on disk
+- Open DB on demand in `gsd_milestone_status` for non-auto sessions
+- Detect phantom milestones from abandoned `gsd_milestone_generate_id`
+- Force re-validation when verdict is `needs-remediation`
+- Exclude closed slices from `findMissingSummaries` check
+- Recover from stale lockfile after crash or SIGKILL
+- Add `createdAt` timestamp and 30s age guard to staleness check
+- Clear stale `pendingAutoStart` after `/clear` interrupts discussion
+- Suppress misleading warnings for expected ENOENT/EISDIR conditions
+- Extract real error from message content when `errorMessage` is useless
+- Show accurate pause message for queued-user-message skip
+- Treat queued-user-message skip as non-retryable interruption
+- Recognize "Not provided." default in `isVerificationNotApplicable`
+- `discoverManifests` skips symlinked extension directories
+- Reconcile plan-file tasks into DB when planner skips persistence (#3600)
+- Use `isClosedStatus()` in dispatch guard instead of raw complete check
+- Browser-tools: make `sharp` an optional lazy dependency
+- Pass required arguments in defer-milestone-stamp test
+- Replace remaining empty catch with `logWarning`
+- Use `logWarning` instead of raw stderr in catch blocks
+- Log error instead of empty catch in `STATE.md` rebuild
+- Log error instead of empty catch in `skip_slice`
+- Cast milestone classification to string for type safety
+- Treat zero-slice roadmap as pre-planning in guided flow
+- Rebuild `STATE.md` after skip-slice and strengthen rethink prompt
+- Use `main_branch` preference in worktree creation
+- Stamp defer and milestone captures as executed after triage
+- TUI: treat absolute file paths as plain text, not commands
+- TUI: break infinite re-render loop for images in cmux
+- Rebuild `STATE.md` before guided-flow dispatch
+- Defer queued shells in active milestone selection
+- Retry: prevent 429 quota cascade and 30-min lockout
+- Add `fastPathInstruction` to `buildDiscussMilestonePrompt` `loadPrompt` call
+
+**Changed:**
+- Auto-commit after quick-task
+
+---
+
+### v2.66.1 — 2026-04-08
+
+**Fixed:**
+- pi-tui: revert `contentCursorRow`, use `hardwareCursorRow` as movement baseline
+- pi-tui: use `contentCursorRow` for render movement baseline instead of `cursorRow`
+- Add `logWarning` to empty catch block in orphaned worktree cleanup
+- Add `consecutiveFinalizeTimeouts` to `LoopState` in journal tests
+- Add escalation and unit-detach guards to finalize timeout handlers
+- Add timeout guard around `postUnitPreVerification` to prevent auto-loop hang
+- OS-specific keyboard shortcut hints via `formatShortcut` helper
+- Subagent: support list-style tools frontmatter
+- Clear autocomplete rows from content bottom
+- Parse annotated pre-exec file paths
+- Add orphaned milestone branch audit at auto-mode bootstrap
+
+---
+
+### v2.67.0 — 2026-04-09 -- KEY RELEASE
+
+Introduced tiered context injection (M005) with 65%+ token reduction and decision scope cascade (R005).
+
+**Added:**
+- Context: implement R005 decision scope cascade and derive scope from slice metadata
+- M005: Tiered Context Injection -- relevance-scoped context with 65%+ reduction
+
+**Fixed:**
+- Test: align auto-loop test timers with updated session timeout
+- Repair CI after branch split (3 occurrences)
+- Fail closed for discussion gate enforcement
+- Harden auto merge recovery and session safety
+- Repair overlay, shortcut, and widget surfaces
+- Prevent stale workflow reconcile state writes
+- Align prompt contracts and validation flow
+- pi-tui: harden input parsing and editor focus behavior
+- Remote-questions: cancel local TUI when remote answer wins the race
+- Auto: increase session timeout to 120s and treat timeout as recoverable pause (#3767)
+- UI: apply `anthropic-api` display name to all model/provider UI surfaces
+- UI: display `anthropic-api` in GSD preferences wizard provider list
+- Remote-questions: race local TUI against remote channel instead of remote-only routing
+- UI: display `anthropic-api` in model selector to distinguish from claude-code
+- Gates: add mechanical enforcement for discussion question gates
+- Prompts: harden non-bypassable gates and exclude dot-folders from scanning
+- Ignore filename headings in `parsePlan`
+- Providers: match 'out of extra usage' error and respect claude-code provider in model resolution (#3772)
+- pi-ai: recover XML parameters trapped in JSON strings
+- Retry: guard claude-code fallback to anthropic provider only
+- Providers: route Anthropic subscription users through Claude Code CLI (#3772)
+- claude-code: use native Windows claude lookup
+- Suppress repeated preferences section warnings
+- Normalize described expected output paths
+- Auto: resilient transient error recovery -- defer to Core RetryHandler and fix `cmdCtx` race
+
+---
+
 ## Summary Statistics
 
 | Metric | Count |
 |--------|-------|
-| Total released versions | 100 |
+| Total released versions | 111 |
 | v0.x releases | 9 |
 | v2.3.x releases | 8 |
 | v2.4.x - v2.9.x releases | 11 |
 | v2.10.x releases | 12 |
 | v2.11.x - v2.33.x releases | 33 |
 | v2.34.x - v2.58.x releases | 27 |
-| Development period | March 11 - March 28, 2026 (18 days) |
-| Key milestone releases | 16 |
-| Total eras | 20 |
+| v2.59.x - v2.67.x releases | 11 |
+| Development period | March 11 - April 9, 2026 (30 days) |
+| Key milestone releases | 20 |
+| Total eras | 21 |

@@ -2,13 +2,13 @@
 
 Comprehensive documentation for **GSD** (Get Shit Done) — the autonomous coding agent built on the [Pi SDK](https://github.com/badlogic/pi-mono).
 
-- **Current release:** v2.58.0 (2026-03-28)
+- **Current release:** v2.67.0 (2026-04-10)
 - **License:** MIT
 - **Package:** [`gsd-pi`](https://www.npmjs.com/package/gsd-pi) on npm
 - **Source:** [github.com/gsd-build/gsd-2](https://github.com/gsd-build/gsd-2)
 - **Discord:** [discord.gg/gsd](https://discord.gg/gsd)
 
-> This documentation covers all released versions (v0.0.1 through v2.58.0). All content is fact-checked against the source code, official documentation, and online sources.
+> This documentation covers all released versions (v0.0.1 through v2.67.0). All content is fact-checked against the source code, official documentation, and online sources.
 
 ---
 
@@ -20,10 +20,10 @@ Comprehensive documentation for **GSD** (Get Shit Done) — the autonomous codin
 | 02 | [Auto Mode & Dispatch](02-auto-mode-and-dispatch.md) | State machine, dispatch rules, phase lifecycle, quality gates, crash recovery, verification enforcement, git trailers |
 | 03 | [Configuration & Preferences](03-configuration-and-preferences.md) | All preferences with types/defaults, capability-aware model routing (ADR-004), isolation modes, environment variables |
 | 04 | [Extensions & Tools](04-extensions-and-tools.md) | 21+ bundled extensions, 5 agents, 56+ skills (30 packs), Ollama, Claude Code CLI, GitHub Sync, MCP client |
-| 05 | [Version History](05-version-history.md) | Complete changelog for ~100 released versions (v0.0.1 → v2.58.0), grouped into 20 eras |
+| 05 | [Version History](05-version-history.md) | Complete changelog for ~123 released versions (v0.0.1 → v2.67.0), grouped into 20+ eras |
 | 06 | [Feature Evolution](06-feature-evolution.md) | 45+ major features tracked across versions, introduction timeline for 84+ features |
-| 07 | [User Guide](07-user-guide.md) | Installation, step/auto/headless/web modes, VS Code extension, commands, parallel orchestration, cost management |
-| 08 | [Fact-Check Report](08-fact-check-report.md) | Online verification of npm, GitHub, VS Code Marketplace, Discord, web mode, daemon, SQLite engine |
+| 07 | [User Guide](07-user-guide.md) | Installation, step/auto/headless/web modes, VS Code extension, commands, parallel orchestration, cost management, Ollama/local LLM, safety harness, multi-runtime support |
+| 08 | [Fact-Check Report](08-fact-check-report.md) | Online verification of npm, GitHub, VS Code Marketplace, Discord, Best of JS, release history, multi-runtime support |
 | 09 | [Developer Guide](09-developer-guide.md) | Extension development, ADR-001/003/004, VS Code extension (3 phases), daemon/Discord, testing |
 | 10 | [API & Internals](10-api-and-internals.md) | SQLite state engine, RPC v2, model providers, error pipeline, compaction, DB-backed tools |
 
@@ -91,6 +91,12 @@ Detailed reference documentation organized by topic:
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v2.67.0 | 2026-04-10 | Latest stable release |
+| v2.66.0 | 2026-04-08 | /gsd show-config, OS-specific keyboard shortcut hints |
+| v2.65.0 | 2026-04-06 | Persistent notification panel |
+| v2.64.0 | 2026-04-04 | LLM safety harness, slice-level parallelism |
+| v2.60.0 | 2026-03-31 | /btw ephemeral side questions |
+| v2.59.0 | 2026-03-29 | VS Code extension phase 3, Ollama/local LLM support |
 | v2.58.0 | 2026-03-28 | Ollama extension, Discord shard listeners, concurrent auto guard |
 | v2.54.0 | 2026-03-27 | Headless M002, real-time parallel TUI monitor with self-healing |
 | v2.52.0 | 2026-03-27 | VS Code extension phase 1, RPC v2, capability metadata routing |
@@ -113,9 +119,9 @@ Detailed reference documentation organized by topic:
 - **Extensions documented:** 21+ bundled extensions
 - **Agents documented:** 5 bundled agents (scout, researcher, worker, javascript-pro, typescript-pro)
 - **Skills documented:** 56+ skills across 30 packs
-- **Versions covered:** ~100 released versions (v0.0.1 → v2.58.0)
-- **Online fact-checks:** npm, GitHub, VS Code Marketplace, Discord verified (2026-04-02)
+- **Versions covered:** 123 released versions (v0.0.1 → v2.67.0)
+- **Online fact-checks:** npm, GitHub, VS Code Marketplace, Discord, Best of JS verified (2026-04-10)
 
 ---
 
-Generated on 2026-04-02 from GSD-2 source code at commit `main` (v2.58.0).
+Generated on 2026-04-10 from GSD-2 source code at commit `main` (v2.67.0).

@@ -199,7 +199,7 @@ Every dispatched unit gets a clean agent session via `ctx.newSession()`. The dis
 
 The system prompt is assembled in `before_agent_start` from the GSD system context, preferences, knowledge, memories, worktree context, and agent instructions.
 
-Session creation has a timeout (`NEW_SESSION_TIMEOUT_MS`) to prevent permanent hangs.
+Session creation has a timeout (`NEW_SESSION_TIMEOUT_MS`, 120s as of v2.67.0, increased from the previous value) to prevent permanent hangs. The timeout is now treated as a recoverable pause rather than a hard failure -- auto mode pauses and can be resumed, instead of stopping entirely.
 
 ---
 
@@ -253,6 +253,14 @@ Auto mode stops immediately on infrastructure errors (`ENOSPC`, `ENOMEM`, `EAGAI
 ### DB Reconciliation for Stale Task Status (v2.50.0)
 
 Before state derivation, GSD reconciles stale task status between the filesystem and the SQLite database. Tasks marked as "dispatched" in the DB but completed on disk are corrected, and vice versa. This prevents ghost tasks from blocking slice progression after crashes.
+
+### Stale Lockfile Recovery (v2.66.0)
+
+Lock files now include a `createdAt` timestamp. When GSD encounters a lock file from a dead process, a 30-second age guard prevents premature cleanup of locks that were just created by a concurrent launch. The staleness check uses both PID liveness (`process.kill(pid, 0)`) and the age guard before removing a lock, reducing the risk of two processes both deciding the lock is stale and racing to acquire it.
+
+### Orphaned Milestone Branch Audit (v2.66.1)
+
+At auto-mode bootstrap, GSD audits for orphaned milestone branches -- branches that exist in the git repo but have no corresponding milestone on disk or in the database. Orphaned branches are logged as warnings to surface leftover state from interrupted milestone deletions or manual git operations.
 
 ---
 
@@ -427,6 +435,27 @@ After every `execute-task` unit, the verification gate discovers and runs shell 
 
 The verification gate regex that identifies operational commands was broadened to match additional patterns, reducing false negatives where legitimate verification commands were not recognized.
 
+### Pre-Execution Plan Verification (v2.65.0)
+
+Before dispatching an `execute-task` unit, GSD runs pre-execution plan verification checks. These checks validate that the task plan's expected inputs exist on disk, that referenced files have not been deleted by a prior task, and that the task's declared dependencies are satisfied. Pre-execution failures block dispatch and surface a diagnostic explaining what is missing.
+
+### Post-Execution Cross-Task Consistency Checks (v2.65.0)
+
+After a task completes, GSD runs cross-task consistency checks that compare the task's outputs against expectations declared by downstream tasks in the same slice. If a completed task was supposed to produce a file that a later task depends on and that file is missing, the inconsistency is flagged.
+
+### Blocking Behavior and Strict Mode (v2.65.0)
+
+Enhanced verification supports a `strict` mode where both pre-execution and post-execution check failures are blocking -- auto mode pauses until the issue is resolved. In non-strict mode (default), post-execution consistency warnings are logged but do not block dispatch of the next task.
+
+```yaml
+enhanced_verification:
+  strict: false
+```
+
+### Depth Verification Answer Validation (v2.66.0)
+
+Before unlocking the write-gate after a depth verification prompt, GSD validates the LLM's answer against the expected verification criteria. Shallow or evasive answers are rejected and the write-gate remains locked, forcing the LLM to provide substantive evidence before proceeding.
+
 ### Auto-Fix Retries
 
 When `verification_auto_fix` is true (default) and verification fails:
@@ -548,6 +577,85 @@ parallel:
   auto_merge: "confirm"
 ```
 
+### Worker Model Override (v2.66.0)
+
+Parallel milestone workers can use a different model than the coordinator. The `parallel` preferences accept a model override so that workers run on a cheaper or faster model while the coordinator retains the primary model for orchestration decisions.
+
+### Slice-Level Parallelism (v2.64.0)
+
+Beyond milestone-level parallelism, GSD supports dependency-aware parallel dispatch within a single milestone. Each eligible slice whose `depends` declarations are fully satisfied can run in its own parallel worker subprocess.
+
+Configuration:
+
+```yaml
+slice_parallel:
+  enabled: false
+  max_workers: 2
+```
+
+The environment variable `GSD_PARALLEL_WORKER` is set in each worker process to prevent recursive dispatch -- a worker will never spawn additional parallel workers. Slice-level parallelism is orthogonal to milestone-level parallelism; both can be active simultaneously when independent slices exist within independent milestones.
+
+### Parallel Research Slices and Milestone Validation (v2.66.0)
+
+Research slices within a milestone can now be dispatched in parallel when they have no mutual dependencies. Milestone validation also runs in parallel across completed milestones when multiple milestones finish in the same dispatch cycle.
+
+---
+
+## LLM Safety Harness (v2.64.0)
+
+**File:** `src/resources/extensions/gsd/llm-safety-harness.ts`
+
+The safety harness prevents the LLM from running destructive operations or querying `gsd.db` directly via bash during auto-mode execution.
+
+### Destructive Operation Blocking
+
+Bash commands issued by the LLM are screened against a deny list of destructive patterns. Commands that would modify critical GSD state files, drop database tables, or perform irreversible filesystem operations are rejected before execution.
+
+### Direct DB Query Prevention (v2.64.0)
+
+The LLM is blocked from querying `gsd.db` directly through bash (e.g., `sqlite3 .gsd/gsd.db`). All database access must go through the structured tool interface, which enforces schema constraints and audit logging.
+
+### Checkpoint and Rollback
+
+Before each code-executing unit, GSD creates a git ref checkpoint. If the unit produces an error and `auto_rollback` is enabled in preferences, GSD rolls back the working tree to the checkpoint ref, undoing any partial changes from the failed unit. This prevents half-completed code modifications from accumulating across retries.
+
+### Evidence Collection
+
+During execution, the harness collects evidence of what the LLM actually did -- tool calls, file modifications, and command outputs. This evidence is persisted alongside the unit record and used by the verification gate and post-mortem forensics.
+
+---
+
+## Context Engineering (v2.67.0)
+
+### Tiered Context Injection (M005)
+
+GSD injects context into dispatch prompts using a tiered relevance model. Instead of loading the full project context for every unit, M005 scores each context artifact (decisions, knowledge base entries, prior summaries) against the current unit's scope and only injects artifacts above a relevance threshold. This produces a 65%+ reduction in per-turn token cost without sacrificing the LLM's awareness of relevant project history.
+
+### Decision Scope Cascade (R005)
+
+R005 derives the scope of each decision record from slice metadata. When a decision is recorded during slice S03 of milestone M002, the scope is tagged accordingly. During dispatch, decisions are filtered by scope cascade: task-level decisions are injected only for that task's unit, slice-level for the slice's units, and milestone-level for all units within the milestone. This prevents irrelevant architectural decisions from consuming context budget in unrelated slices.
+
+---
+
+## Discussion Gate Enforcement (v2.67.0)
+
+Milestone discussion uses a 4-layer gated question flow with mechanical enforcement. The four gates are:
+
+| Gate | Purpose |
+|------|---------|
+| Scope | Define what the milestone covers and excludes |
+| Architecture | Establish technical approach and key design decisions |
+| Error | Identify failure modes and error handling strategy |
+| Quality | Set acceptance criteria and verification requirements |
+
+### Fail-Closed Behavior
+
+Discussion gate enforcement is fail-closed: if the gate confirmation is missing or ambiguous, all execution tools are blocked. The LLM cannot proceed to planning or execution until the gate is explicitly confirmed. This prevents the LLM from skipping discussion questions and jumping straight to code generation.
+
+### Fast Path for Queued Milestone Discussion (v2.66.0)
+
+When a queued milestone already has a CONTEXT-DRAFT from a prior session, the discussion gate offers a fast path that skips already-answered questions and resumes from the first unanswered gate layer.
+
 ---
 
 ## Prompt Loader
@@ -583,6 +691,22 @@ Escalation: if a downgraded task fails, `escalateTier()` promotes it: light -> s
 
 ---
 
+## State Machine Hardening (v2.66.0)
+
+A 5-wave systematic fix addressed state machine resilience across the entire GSD engine. Each wave targeted a specific failure category:
+
+| Wave | Focus | Examples |
+|------|-------|---------|
+| Wave 1 | Critical data integrity | Prevent silent data loss in milestone/slice status transitions |
+| Wave 2 | Event log reconciliation | Detect concurrent event log growth during reconcile, fix stale entries |
+| Wave 3 | Session and recovery robustness | Harden cold resume, session restore, and crash recovery paths |
+| Wave 4 | Atomic writes and randomized tmp paths | Prevent partial writes from corrupting state files; randomize temp file names to avoid collisions |
+| Wave 5 | Consistency and cleanup | Final sweep for edge cases, orphaned state, and silent failures |
+
+86+ regression tests were added alongside these fixes to prevent regressions. The test suite covers adversarial scenarios (concurrent writes, partial failures, interrupted operations) identified through structured adversarial review of each wave.
+
+---
+
 ## Activity Log
 
 On each unit completion and session shutdown, `saveActivityLog()` persists a record to `.gsd/activity/` for forensic analysis. This data powers `/gsd forensics` for post-mortem investigation.
@@ -607,6 +731,14 @@ On each unit completion and session shutdown, `saveActivityLog()` persists a rec
 | Infrastructure error halt (v2.41.0) | Stop immediately on ENOSPC/ENOMEM/EAGAIN |
 | Quality gates (v2.50.0) | 8-question evaluation at planning and completion |
 | Verification class compliance (v2.51.0) | Block milestone completion without passing evidence |
+| LLM safety harness (v2.64.0) | Block destructive operations and direct DB queries |
+| Checkpoint/rollback (v2.64.0) | Git ref checkpoint before code units; rollback on error |
+| Pre-execution plan verification (v2.65.0) | Validate task inputs and dependencies before dispatch |
+| Post-execution consistency checks (v2.65.0) | Cross-task output validation after execution |
+| Depth verification answer validation (v2.66.0) | Reject shallow answers before write-gate unlock |
+| Discussion gate enforcement (v2.67.0) | Fail-closed 4-layer gated discussion before execution |
+| State machine hardening (v2.66.0) | 5-wave fix with 86+ regression tests |
+| Stale lockfile age guard (v2.66.0) | 30s age guard prevents premature lock cleanup |
 | Sliding-window stuck detection (v2.39.0) | Catch infinite loops without false positives |
 | SIGHUP/SIGINT lock cleanup (v2.41.0) | Clean lock files on crash signals |
 | EPIPE guard | Clean exit when stdout pipe closes |

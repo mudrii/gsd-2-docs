@@ -1,6 +1,6 @@
 # GSD-2 User Guide
 
-Comprehensive reference for GSD-2, the autonomous coding agent built on the Pi SDK. This guide covers released functionality as of v2.58.0.
+Comprehensive reference for GSD-2, the autonomous coding agent built on the Pi SDK. This guide covers released functionality as of v2.67.0.
 
 ## Installation and Requirements
 
@@ -37,9 +37,9 @@ The Dockerfile uses a multi-stage build with proven container patterns. This is 
 Available on the VS Code Marketplace, published by FluxLabs. Search for "GSD" in VS Code extensions or install from:
 https://marketplace.visualstudio.com/items?itemName=FluxLabs.gsd-2
 
-The extension provides:
+The extension (v0.3.0, 1,578 installs) provides:
 - `@gsd` chat participant in VS Code Chat
-- Sidebar dashboard with connection status, model info, token usage, and quick actions
+- Sidebar redesign with SCM provider integration, checkpoints, and diagnostics (v2.59.0 phase 3)
 - Full command palette for start/stop, model switching, and session export
 - Activity feed, workflow controls, session forking, and enhanced code lens (v2.53.0)
 - Status bar, file decorations, bash terminal, session tree, and conversation history (v2.52.0)
@@ -110,6 +110,7 @@ gsd web       # alternative syntax
 - **Dark mode** -- a dedicated dark theme with raised token floor and flattened opacity tiers for improved terminal contrast (v2.52.0). Light theme also has improved contrast (v2.56.0).
 - **Change project root** -- a button in the web UI lets you switch the project directory without restarting the server (v2.44.0)
 - **Dashboard metrics** -- falls back to project totals when dashboard metrics are zero (v2.58.0)
+- **Persistent notification panel** -- non-modal notification panel for background events and status updates (v2.65.0)
 
 ## Headless Mode
 
@@ -234,6 +235,8 @@ All state lives on disk in `.gsd/`:
 | `/gsd discuss` | Discuss architecture decisions; can target queued milestones (v2.48.0) |
 | `/gsd queue` | Queue the next milestone |
 | `/gsd next` | Run one unit and stop |
+| `/gsd show-config` | Display resolved configuration from all sources (v2.66.0) |
+| `/btw` | Ephemeral side question -- ask something without affecting the current task context (v2.60.0) |
 
 ### Project Management
 
@@ -260,6 +263,12 @@ All state lives on disk in `.gsd/`:
 |---------|-------------|
 | `/terminal` | Direct shell execution from within a GSD session (v2.51.0) |
 
+### Ephemeral Side Questions
+
+| Command | Description |
+|---------|-------------|
+| `/btw` | Ask an ephemeral side question without polluting the current task context (v2.60.0) |
+
 ### Parallel Orchestration
 
 | Command | Description |
@@ -281,6 +290,78 @@ All state lives on disk in `.gsd/`:
 | `/gsd update` | Update GSD to latest version |
 | `/gsd migrate` | Migrate from v1 `.planning` directories |
 | `/worktree` (or `/wt`) | Manage git worktrees (list, merge, clean, remove) |
+
+## OS-Specific Keyboard Shortcut Hints (v2.66.1)
+
+The TUI adapts keyboard shortcut hints to the current platform. On macOS, shortcuts display with `Cmd` and `Opt` modifiers; on Linux and Windows, `Ctrl` and `Alt` are shown instead. This applies to the status bar, help overlays, and all inline shortcut references throughout the interface.
+
+## Ollama and Local LLM Support (v2.59.0+)
+
+GSD supports running local models via Ollama for offline or privacy-sensitive workflows.
+
+### Setup
+
+Install Ollama and pull a model:
+
+```bash
+ollama pull llama3
+```
+
+GSD auto-discovers running Ollama instances on the default port. No additional configuration is required -- available models appear in the model picker automatically.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ollama status` | Show Ollama connection status and available models |
+| `/ollama models` | List all locally available models |
+| `/ollama pull <model>` | Pull a model from the Ollama registry |
+
+Local models can be assigned to specific phases via the standard model configuration in preferences. The dynamic routing system treats Ollama models as a local provider alongside cloud providers.
+
+## LLM Safety Harness (v2.64.0)
+
+The safety harness prevents destructive operations during autonomous execution. Before executing potentially irreversible actions (file deletions, database writes, force pushes), GSD creates a checkpoint of the current project state. If the operation fails or produces unexpected results, the harness can roll back to the checkpoint automatically.
+
+### Behavior
+
+- **Checkpoint creation:** automatic before destructive tool calls in auto mode
+- **Rollback:** triggered on task failure or verification gate rejection
+- **Manual rollback:** available via `/gsd doctor` recovery procedures
+- **Scope:** applies to filesystem changes and git operations within the project directory
+
+The harness is enabled by default in auto mode and does not require configuration.
+
+## Slice-Level Parallelism (v2.64.0)
+
+Within a single milestone, multiple slices can now execute in parallel when their dependency graphs allow it. This is distinct from milestone-level parallel orchestration -- slice-level parallelism runs concurrent slices inside one milestone worker.
+
+GSD analyzes the slice dependency declarations in the roadmap and identifies slices that have no mutual dependencies. Eligible slices are dispatched to concurrent task runners sharing the same worktree, with file-level locking to prevent conflicts.
+
+Enable via preferences:
+
+```yaml
+parallel:
+  slice_parallelism: true
+```
+
+## Multi-Runtime Support
+
+GSD supports 9 runtimes for agent execution:
+
+1. Claude Code
+2. OpenCode
+3. Gemini CLI
+4. Codex
+5. GitHub Copilot
+6. Antigravity
+7. Cursor
+8. Windsurf
+9. Augment
+
+### RTK Integration
+
+Shell output compression uses RTK (Runtime Toolkit) integration to reduce token consumption from verbose command output. Long shell outputs are automatically summarized before being fed back into the context window, preserving relevant information while minimizing token waste.
 
 ## Git Strategy
 
@@ -671,7 +752,7 @@ Full state rebuild:
 ### Getting Help
 
 - GitHub Issues: https://github.com/gsd-build/GSD-2/issues
-- Discord: https://discord.gg/gsd (approximately 3,200 members)
+- Discord: https://discord.gg/gsd
 - Dashboard: `Ctrl+Alt+G` or `/gsd status`
 - Forensics: `/gsd forensics` for full-access debugging and post-mortem analysis
 - Session logs: `.gsd/activity/` contains JSONL session dumps

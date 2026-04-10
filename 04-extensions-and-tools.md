@@ -22,17 +22,19 @@ This document covers every bundled extension, the agent definitions, and the ski
 12. [Bundled Agents](#bundled-agents)
 13. [Mac Tools](#mac-tools)
 14. [MCP Client](#mcp-client)
-15. [Voice](#voice)
-16. [GitHub Sync](#github-sync)
-17. [Slash Commands](#slash-commands)
-18. [Ask User Questions](#ask-user-questions)
-19. [Secure Env Collect](#secure-env-collect)
-20. [Remote Questions](#remote-questions)
-21. [Universal Config](#universal-config)
-22. [AWS Auth](#aws-auth)
-23. [TTSR](#ttsr)
-24. [Skill System](#skill-system)
-25. [Dashboard and Visualizer](#dashboard-and-visualizer)
+15. [MCP Server](#mcp-server)
+16. [Voice](#voice)
+17. [GitHub Sync](#github-sync)
+18. [Slash Commands](#slash-commands)
+19. [Ask User Questions](#ask-user-questions)
+20. [Secure Env Collect](#secure-env-collect)
+21. [Remote Questions](#remote-questions)
+22. [Universal Config](#universal-config)
+23. [AWS Auth](#aws-auth)
+24. [TTSR](#ttsr)
+25. [Skill System](#skill-system)
+26. [BTW Skill](#btw-skill)
+27. [Dashboard and Visualizer](#dashboard-and-visualizer)
 
 ---
 
@@ -44,9 +46,9 @@ Every extension can declare a `package.json` manifest with a `pi` field containi
 
 Extensions without a manifest are always loaded (backwards-compatible). Extensions with a manifest are filtered through the registry before loading.
 
-### Topological Sort and Unified Filtering (v2.58.0)
+### Topological Sort and Unified Filtering (v2.58.0, wired v2.59.0)
 
-Extension loading now performs a topological sort on declared dependencies so that libraries (e.g., `cmux`) initialize before the extensions that depend on them. The unified registry filtering pipeline runs after discovery: read manifests, check enabled state, sort by dependency order, and return diagnostics for any unresolvable dependency warnings.
+Extension loading now performs a topological sort on declared dependencies so that libraries (e.g., `cmux`) initialize before the extensions that depend on them. The unified registry filtering pipeline runs after discovery: read manifests, check enabled state, sort by dependency order, and return diagnostics for any unresolvable dependency warnings. As of v2.59.0, topological sort and unified registry filtering are fully wired into the extension loading pipeline.
 
 ### Extension Discovery with Pi Manifest Opt-Out (v2.39.0)
 
@@ -59,6 +61,14 @@ Seven extension manifests now declare `provides.hooks` arrays listing which life
 ### TypeScript Syntax Detection in .js Extension Files (v2.44.0)
 
 The extension loader detects TypeScript syntax inside `.js` files and surfaces a warning suggesting the file be renamed to `.ts`. This prevents silent compilation failures when user-authored extensions use TypeScript features but have a `.js` extension.
+
+### Shared Jiti Module Cache (v2.64.0)
+
+Extension loading now shares a single jiti module cache across all extension `import()` calls. This eliminates redundant re-compilation of shared dependencies during startup, improving load performance for projects with many extensions.
+
+### Pruning Removed Bundled Extensions on Upgrade (v2.64.0)
+
+When GSD is upgraded, the resource sync pipeline detects bundled subdirectory extensions that have been removed from the new version and prunes them from the user's local extension directory. This prevents stale extensions from lingering after an upgrade and causing conflicts or errors.
 
 ---
 
@@ -107,7 +117,7 @@ The core extension powers the entire GSD workflow system. It is the largest exte
 | `/gsd update` | Update GSD |
 | `/gsd mcp` | MCP server status and connectivity (v2.45.0) |
 | `/gsd rethink` | Conversational project reorganization (v2.45.0) |
-| `/gsd codebase` | Generate and manage codebase map (v2.58.0) |
+| `/gsd codebase` | Generate and manage codebase map; supports preferences, `--collapse-threshold`, and auto-init (v2.58.0, enhanced v2.62.0) |
 | `/gsd changelog` | LLM-summarized release notes (v2.35.0) |
 | `/gsd forensics` | Full-access GSD debugger with journal awareness (v2.40.0) |
 | `/gsd fast` | Enable fast service tier for supported models (v2.42.0) |
@@ -136,7 +146,7 @@ The core extension powers the entire GSD workflow system. It is the largest exte
 
 **Doctor** (`doctor.ts`, `doctor-*.ts`): Environment health checks covering providers, tools, git configuration, permissions, and file integrity.
 
-**Codebase Map** (`codebase-generator.ts`, `commands-codebase.ts`) (v2.58.0): Generates `.gsd/CODEBASE.md` -- a structured map of the project's source files with file descriptions, coverage stats, and generation timestamps. Supports incremental updates that preserve existing descriptions. Subcommands: `generate [--max-files N]`, `update`, `stats`.
+**Codebase Map** (`codebase-generator.ts`, `commands-codebase.ts`) (v2.58.0, enhanced v2.59.0 + v2.62.0): Generates `.gsd/CODEBASE.md` -- a structured map of the project's source files with file descriptions, coverage stats, and generation timestamps. Supports incremental updates that preserve existing descriptions. Subcommands: `generate [--max-files N]`, `update`, `stats`. As of v2.59.0, the codebase map provides structural orientation for fresh agent contexts. In v2.62.0, `/gsd codebase` gained preferences integration, a `--collapse-threshold` flag for controlling directory expansion, and auto-init behavior.
 
 **Stale Commit Safety Check** (`doctor-git-checks.ts`) (v2.58.0): Doctor detects uncommitted changes that have sat idle beyond a configurable threshold. When auto-fix is enabled, it creates a snapshot commit (`gsd snapshot: uncommitted changes after Nm inactivity`) to prevent data loss. Stale snapshot commits are auto-cleaned during `/gsd cleanup`.
 
@@ -148,15 +158,24 @@ The core extension powers the entire GSD workflow system. It is the largest exte
 
 **Path:** `src/resources/extensions/ollama/`
 
-First-class local LLM support via Ollama (v2.58.0). Auto-detects a running Ollama instance, discovers locally pulled models, and registers them as a provider. No configuration required -- if Ollama is running, models appear automatically.
+First-class local LLM support via Ollama (v2.58.0, native provider v2.59.0 + v2.64.0). Auto-detects a running Ollama instance, discovers locally pulled models, and registers them as a provider. No configuration required -- if Ollama is running, models appear automatically.
 
 ### How It Works
 
-1. Probes `http://localhost:11434/api/tags` (or `OLLAMA_HOST`) on session start
-2. Discovers all locally pulled models with capability detection (vision, reasoning, context window)
-3. Registers each model through the OpenAI-compatible endpoint (`/v1/chat/completions`)
-4. Re-probes on session switch to pick up newly pulled models
-5. Unregisters provider automatically if Ollama stops running
+1. Probes `http://localhost:11434/api/tags` (or `OLLAMA_HOST` env var) on session start
+2. Auto-discovers all locally pulled models via `/api/tags`
+3. Capability detection per model: vision, reasoning, and context window size
+4. Zero-cost model registration (local inference, no API key)
+5. Re-probes on session switch to pick up newly pulled models
+6. Unregisters provider automatically if Ollama stops running
+
+### Native `/api/chat` Provider (v2.64.0)
+
+In v2.64.0, Ollama switched from the OpenAI-compatible endpoint (`/v1/chat/completions`) to a native `/api/chat` stream provider (`ollama-chat-provider.ts`). This exposes the full set of Ollama generation options directly:
+
+- **Temperature**, **top_p**, **top_k**, **repeat_penalty**, and other sampling parameters
+- Full option passthrough to the Ollama API without translation loss
+- Uses `apiKey` auth mode to avoid a `streamSimple` crash that occurred with the `none` auth mode
 
 ### Tool: `ollama_manage`
 
@@ -181,8 +200,8 @@ LLM-callable tool for managing local models:
 
 ### Provider Registration
 
-- **Auth mode:** `none` (local inference, no API key)
-- **API:** OpenAI-completions compatible
+- **Auth mode:** `apiKey` (v2.64.0; previously `none`)
+- **API:** Native Ollama `/api/chat` (v2.64.0; previously OpenAI-compat `/v1/chat/completions`)
 - **Compat flags:** No developer role, no reasoning effort, no usage in streaming
 - **Cost:** Zero (local inference)
 
@@ -192,7 +211,7 @@ LLM-callable tool for managing local models:
 
 **Path:** `src/resources/extensions/claude-code-cli/`
 
-External tool execution mode for CLI providers (v2.47.0). Registers a model provider that delegates inference to the user's locally-installed Claude Code CLI via the official Agent SDK.
+External tool execution mode for CLI providers (v2.47.0, stateful v2.59.0). Registers a model provider that delegates inference to the user's locally-installed Claude Code CLI via the official Agent SDK.
 
 Users with a Claude Code subscription (Pro/Max/Team) get subsidized inference through GSD's UI -- no API key required. Uses Anthropic's official `@anthropic-ai/claude-agent-sdk`, never touches credentials, never offers a login flow.
 
@@ -204,6 +223,18 @@ Users with a Claude Code subscription (Pro/Max/Team) get subsidized inference th
 - **Streaming:** Custom stream adapter translates Agent SDK events into GSD's internal stream format
 - **Partial builder:** Accumulates streaming deltas into complete message structures
 - Tool calls are rendered above text responses in the TUI
+
+### Stateful Context (v2.59.0)
+
+The Claude Code CLI provider is now stateful with full context and sidechain events. This means the provider maintains conversation context across turns within a session, matching the behavior of direct API providers.
+
+### Anthropic Subscription Routing (v2.67.0)
+
+Users with active Anthropic subscriptions are automatically routed through the Claude Code CLI provider instead of the direct API. This avoids API billing for users who already have a subscription plan. The UI distinguishes between `anthropic-api` (direct API) and `claude-code` (CLI provider) in the model selector, preferences wizard, and all model/provider surfaces. Fallback guards ensure that when the CLI provider fails, fallback is restricted to the `anthropic` provider only.
+
+### Native Windows Support (v2.67.0)
+
+The provider uses native Windows `claude` CLI lookup on Win32, removing the dependency on Unix-style PATH resolution.
 
 ### Models
 
@@ -431,6 +462,16 @@ model: sonnet
 ---
 ```
 
+As of v2.66.1, the `tools` field also supports list-style syntax:
+```yaml
+---
+tools:
+  - read
+  - grep
+  - bash
+---
+```
+
 ### Command: `/subagent`
 
 List available subagents with their source and description.
@@ -555,7 +596,7 @@ MCP servers are configured in project files:
 
 Supports two transport types:
 - **stdio:** Local process with command + args + env
-- **http:** Remote server via Streamable HTTP transport
+- **http:** Remote server via Streamable HTTP transport with OAuth auth provider (v2.64.0)
 
 ### Environment Variable Resolution (v2.39.0)
 
@@ -575,6 +616,68 @@ Dedicated command for MCP server status and connectivity diagnostics:
 - Automatic cleanup on session shutdown
 - Config cache invalidation on session switch
 - Output truncation for large results
+
+---
+
+## MCP Server
+
+**Path:** `packages/mcp-server/`
+
+GSD exposes its orchestration, project-state, and workflow capabilities as an MCP server (v2.63.0, workflow tools v2.67.0). External agents (Claude Code, Cursor, etc.) can connect to GSD over MCP and drive workflow operations without using the TUI.
+
+### Session Management Tools (6)
+
+| Tool | Description |
+|------|-------------|
+| `gsd_execute` | Start a GSD auto-mode session for a project directory; returns a `sessionId` |
+| `gsd_status` | Poll session status including progress, recent events, pending blockers, and cost |
+| `gsd_result` | Get accumulated session result (partial if still running) |
+| `gsd_cancel` | Cancel a running session and abort the current operation |
+| `gsd_query` | Read project state from filesystem (STATE.md, PROJECT.md, requirements, milestones); no session required |
+| `gsd_resolve_blocker` | Resolve a pending blocker by sending a response |
+
+### Read-Only Project State Tools (6, v2.63.0)
+
+Pure filesystem reads that require no active session:
+
+| Tool | Description |
+|------|-------------|
+| `gsd_progress` | Structured progress metrics: active milestone/slice/task, phase, completion counts, blockers, next action |
+| `gsd_roadmap` | Full project roadmap structure with milestones, slices, tasks, status, risk, and dependencies; optional milestone filter |
+| `gsd_history` | Execution history with cost, token usage, model, and duration per unit |
+| `gsd_doctor` | Lightweight structural health check on `.gsd/` (missing files, status inconsistencies, orphaned state) |
+| `gsd_captures` | Captured ideas and thoughts from CAPTURES.md with triage status filtering |
+| `gsd_knowledge` | Project knowledge base: rules, patterns, and lessons learned |
+
+### Workflow Management Tools (17, v2.67.0)
+
+Mutation tools that execute GSD workflow operations. Each tool validates `projectDir` against `GSD_WORKFLOW_PROJECT_ROOT` for path safety. Write-gate enforcement blocks operations that violate discussion or queue phase constraints. Tools are registered with both canonical and alias names for ergonomic access:
+
+| Tool | Alias | Description |
+|------|-------|-------------|
+| `gsd_plan_milestone` | -- | Plan a new milestone with slices, risks, proof strategy, and verification contract |
+| `gsd_plan_slice` | -- | Plan a slice within a milestone with tasks, success criteria, and proof level |
+| `gsd_replan_slice` | `gsd_slice_replan` | Replan a slice after discovering a blocker |
+| `gsd_slice_complete` | `gsd_complete_slice` | Mark a slice as complete with summary, verification, and requirement outcomes |
+| `gsd_complete_milestone` | `gsd_milestone_complete` | Mark a milestone as complete with narrative, verification, and lessons learned |
+| `gsd_validate_milestone` | `gsd_milestone_validate` | Run milestone validation with verdict, remediation plan, and verification classes |
+| `gsd_reassess_roadmap` | `gsd_roadmap_reassess` | Reassess the roadmap after a slice completes (modify, add, or remove slices) |
+| `gsd_save_gate_result` | -- | Save a quality gate result (pass/flag/omitted) with rationale |
+| `gsd_summary_save` | -- | Save a summary artifact (SUMMARY, CONTEXT, PLAN, etc.) |
+| `gsd_task_complete` | `gsd_complete_task` | Mark a task as complete with verification evidence |
+| `gsd_milestone_status` | -- | Get detailed status for a specific milestone |
+
+### OAuth Auth Provider (v2.64.0)
+
+The MCP client's HTTP transport now supports an OAuth auth provider, enabling authenticated connections to remote MCP servers that use OAuth-based access control.
+
+### Architecture
+
+- Dynamic imports for `@modelcontextprotocol/sdk` to work around TS Node16 subpath export resolution
+- Serialized workflow execution queue prevents concurrent mutations
+- Write-gate enforcement loaded from GSD's bootstrap module
+- `GSD_WORKFLOW_PROJECT_ROOT` env var restricts operations to a specific directory tree
+- `GSD_WORKFLOW_EXECUTORS_MODULE` env var allows custom executor module injection
 
 ---
 
@@ -705,6 +808,10 @@ Secure collection of environment variables through a paged masked-input TUI.
 **Path:** `src/resources/extensions/remote-questions/`
 
 Route `ask_user_questions` prompts to Slack, Discord, or Telegram when running in headless auto-mode.
+
+### Local TUI Racing (v2.67.0)
+
+In interactive mode with a remote channel configured, the system now races the local TUI prompt against the remote channel instead of routing exclusively to the remote. If the remote answer arrives first, the local TUI is automatically cancelled and the remote response is used. This means users can answer from either the terminal or their phone -- whichever is faster wins.
 
 ### Supported Channels
 
@@ -967,6 +1074,14 @@ Post-unit hook that analyzes whether the agent deviated from a skill's instructi
 
 ---
 
+## BTW Skill
+
+**Command:** `/btw`
+
+Ephemeral side-question skill (v2.60.0). Allows users to ask quick tangential questions without derailing the current conversation context. The `/btw` command opens a lightweight interaction that draws on the existing conversation for context but does not persist its output into the main session history. Useful for clarifying a concept, checking syntax, or getting a quick answer mid-task.
+
+---
+
 ## Dashboard and Visualizer
 
 ### Dashboard Overlay
@@ -1015,6 +1130,16 @@ Generates self-contained HTML reports in `.gsd/reports/`:
 - Printable to PDF from any browser
 
 **Auto-generation:** `auto_report: true` (default) generates after milestone completion.
+
+### Persistent Notification Panel (v2.65.0)
+
+A persistent notification system with three presentation surfaces:
+
+- **TUI overlay:** Full notification overlay with backdrop dimming and viewport padding. Content-fit sizing wraps long messages and adapts overlay height to content. Notifications display as a stack with most recent on top.
+- **Widget:** Compact notification indicator in the dashboard footer area for unread notifications.
+- **Web API:** Notification state exposed through the web dashboard API for external consumption.
+
+**Lock ownership:** Notification locks include ownership metadata. The system only unlinks locks owned by the current process, preventing foreign lock deletion in multi-session scenarios.
 
 ---
 

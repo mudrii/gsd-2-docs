@@ -50,6 +50,11 @@ Only the YAML frontmatter block (between `---` delimiters) is parsed. Content af
 | `GSD_PROJECT_ID` | (auto-hash) | Override the automatic project identity hash. Per-project state goes to `$GSD_HOME/projects/<GSD_PROJECT_ID>/` instead of the computed hash. Useful for CI/CD or sharing state across clones of the same repo. (v2.39) |
 | `GSD_STATE_DIR` | `$GSD_HOME` | Per-project state root. Controls where `projects/<repo-hash>/` directories are created. Takes precedence over `GSD_HOME` for project state. |
 | `GSD_CODING_AGENT_DIR` | `$GSD_HOME/agent` | Agent directory containing managed resources, extensions, and auth. Takes precedence over `GSD_HOME` for agent paths. |
+| `GSD_PARALLEL_WORKER` | (unset) | Set to `"1"` in parallel worker subprocesses (both milestone-level and slice-level). Used internally to prevent nesting and to signal worker context. (v2.64.0) |
+| `GSD_PERSIST_WRITE_GATE_STATE` | (unset) | Set to `"1"` to enable write gate state persistence. Used by the workflow MCP server to persist write gate snapshots across sessions. (v2.66.0) |
+| `GSD_RTK_DISABLED` | (unset) | Set to `"1"` to disable RTK integration regardless of `experimental.rtk` preference. Environment variable takes precedence over preferences for manual override. |
+| `OLLAMA_HOST` | `http://localhost:11434` | Override the Ollama server URL. Respected by the native Ollama provider extension for non-default endpoints. (v2.59.0) |
+| `CONTEXT7_API_KEY` | (unset) | Context7 API key for higher rate limits on library documentation lookups. Can also be set via `/gsd config`. |
 
 ---
 
@@ -337,7 +342,8 @@ Complexity-based model routing. When enabled, auto mode selects cheaper models f
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `enabled` | boolean | `false` | Master toggle |
+| `enabled` | boolean | `true` | Master toggle (enabled by default since v2.59.0) |
+| `capability_routing` | boolean | `true` | Enable capability-aware model scoring (v2.62.0). When enabled and multiple models are eligible, ranks by task-capability match instead of cheapest-in-tier. |
 | `tier_models.light` | string | (auto-detected) | Model for simple tasks |
 | `tier_models.standard` | string | (auto-detected) | Model for standard tasks |
 | `tier_models.heavy` | string | (auto-detected) | Model for complex tasks |
@@ -360,7 +366,7 @@ Known model tier assignments (from `model-router.ts`):
 
 #### Capability-Aware Model Routing (ADR-004)
 
-Starting with v2.52.0, the model routing architecture is evolving from a pure cost/tier approach to a **capability-aware** two-dimensional system that combines complexity classification ("how hard") with capability scoring ("what kind"). This is defined in ADR-004 and is being rolled out in phases.
+Starting with v2.52.0, the model routing architecture evolved from a pure cost/tier approach to a **capability-aware** two-dimensional system that combines complexity classification ("how hard") with capability scoring ("what kind"). This is defined in ADR-004. As of v2.62.0, the full pipeline is wired: task metadata extraction, capability scoring, `before_model_select` hook, and verbose scoring output.
 
 **Key concepts:**
 
@@ -369,6 +375,14 @@ Starting with v2.52.0, the model routing architecture is evolving from a pure co
 - The router filters to tier-eligible models (downgrade-only), then ranks by capability score when multiple models are eligible.
 - Models without capability profiles receive uniform scores (50 in each dimension), falling back to cheapest-in-tier behavior.
 - All existing invariants are preserved: downgrade-only semantics, budget pressure, retry escalation, fallback chains.
+
+**`before_model_select` hook (v2.62.0):** Extensions can register a `before_model_select` hook to override model selection entirely. The hook receives the classification result, task metadata, and eligible models. Return `{ modelId: "..." }` to override, or `undefined` to let built-in capability scoring proceed.
+
+**Flat-rate provider routing guard (v2.64.0):** Dynamic model routing is automatically disabled for flat-rate providers (e.g., GitHub Copilot) where all models cost the same per request. Downgrading to a cheaper model would degrade quality without providing cost benefit.
+
+**Budget pressure downgrading:** When budget usage exceeds thresholds, the router biases toward cheaper models in the eligible tier. This works alongside the `budget_ceiling` and `budget_enforcement` preferences.
+
+**Escalation on retry failure:** When a task fails and retries, the router escalates to the next higher tier (if `escalate_on_failure` is enabled) before attempting the retry.
 
 **Provider registry (`models.custom.ts`):** Models from providers not tracked by the auto-generated models.dev catalog are defined in `packages/pi-ai/src/models.custom.ts`. This includes Alibaba Coding Plan models (Qwen, GLM, Kimi K2.5, MiniMax M2.5) and Z.AI models. GLM-5.1 was added to the Z.AI provider in v2.57.0.
 
@@ -552,6 +566,64 @@ Run multiple milestones simultaneously.
 | `budget_ceiling` | number | -- | Aggregate cost limit in USD |
 | `merge_strategy` | string | `"per-milestone"` | `"per-slice"` or `"per-milestone"` |
 | `auto_merge` | string | `"confirm"` | `"auto"`, `"confirm"`, or `"manual"` |
+| `worker_model` | string | (inherited) | Model override for parallel milestone workers (v2.66.0). When set, workers use this model (e.g., `"claude-haiku-4-5"`) instead of inheriting the coordinator's model. Useful for cost savings on execution-heavy milestones. |
+
+### `slice_parallel` (v2.64.0)
+
+Slice-level parallelism within a milestone. When enabled, independent slices within the same milestone can execute concurrently in separate worktrees.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable slice-level parallelism |
+| `max_workers` | number | `2` | Maximum concurrent slice workers |
+
+```yaml
+slice_parallel:
+  enabled: true
+  max_workers: 3
+```
+
+Unlike milestone-level `parallel`, which runs entire milestones concurrently, `slice_parallel` operates within a single milestone and respects slice dependency ordering. Slices with unmet dependencies wait until their prerequisites complete. Each worker runs in its own worktree with `GSD_PARALLEL_WORKER=1` set in the environment.
+
+### `safety_harness` (v2.64.0)
+
+LLM safety harness configuration for auto-mode damage control. Monitors, validates, and constrains LLM behavior during auto-mode execution. Enabled by default with a warn-and-continue policy.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Master toggle |
+| `evidence_collection` | boolean | `true` | Collect evidence of LLM actions |
+| `file_change_validation` | boolean | `true` | Validate file changes against plan |
+| `destructive_command_warnings` | boolean | `true` | Warn on destructive shell commands |
+| `content_validation` | boolean | `true` | Validate generated content |
+| `checkpoints` | boolean | `true` | Enable git checkpoints for rollback |
+| `auto_rollback` | boolean | `false` | Automatically rollback to last checkpoint on error |
+| `timeout_scale_cap` | number | -- | Cap timeout scaling factor |
+
+```yaml
+safety_harness:
+  enabled: true
+  checkpoints: true
+  auto_rollback: true
+```
+
+### `enhanced_verification` (v2.65.0)
+
+Pre-execution and post-execution verification checks that validate task plans before execution and audit results afterward.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enhanced_verification` | boolean | `true` | Master toggle (opt-out). Set `false` to disable all enhanced verification. |
+| `enhanced_verification_pre` | boolean | `true` | Enable pre-execution checks (package existence, file references). Only applies when `enhanced_verification` is true. |
+| `enhanced_verification_post` | boolean | `true` | Enable post-execution checks (runtime error detection, audit warnings). Only applies when `enhanced_verification` is true. |
+| `enhanced_verification_strict` | boolean | `false` | Strict mode: treat any pre-execution check failure as blocking (default: warnings only for non-critical failures). |
+
+```yaml
+enhanced_verification: true
+enhanced_verification_pre: true
+enhanced_verification_post: true
+enhanced_verification_strict: false
+```
 
 ### `github` (v2.39.0)
 
@@ -573,6 +645,15 @@ github:
 | `project` | string | (none) | GitHub Project ID for project board integration |
 
 Requires `gh` CLI installed and authenticated. Sync mapping is persisted in `.gsd/.github-sync.json`.
+
+### `reactive_execution.subagent_model` (v2.66.0)
+
+Model override for subagent workers spawned during reactive execution. When set, subagents use this model instead of inheriting the parent session's model.
+
+```yaml
+reactive_execution:
+  subagent_model: claude-haiku-4-5
+```
 
 ### `experimental`
 
@@ -705,7 +786,11 @@ token_profile, phases, auto_visualize, auto_report, parallel,
 verification_commands, verification_auto_fix, verification_max_retries,
 search_provider, context_selection, widget_mode, reactive_execution,
 gate_evaluation, github, service_tier, forensics_dedup, show_token_cost,
-stale_commit_threshold_minutes, experimental
+stale_commit_threshold_minutes, context_management, experimental, codebase,
+slice_parallel, safety_harness, enhanced_verification,
+enhanced_verification_pre, enhanced_verification_post,
+enhanced_verification_strict, discuss_preparation, discuss_web_research,
+discuss_depth
 ```
 
 ---
@@ -722,6 +807,8 @@ stale_commit_threshold_minutes, experimental
 | `/gsd mode` | Switch workflow mode (solo/team) |
 | `/gsd config` | Tool API key configuration wizard |
 | `/gsd fast` | Toggle OpenAI service tier (priority/flex) |
+| `/gsd show-config` | Show effective configuration -- models, routing, toggles, and active overrides (v2.66.0) |
+| `/btw` | Ephemeral side question -- ask a quick question from conversation context without interrupting the current workflow (v2.60.0) |
 
 ---
 
@@ -751,6 +838,7 @@ token_profile: balanced
 # Dynamic model routing
 dynamic_routing:
   enabled: true
+  capability_routing: true
   escalate_on_failure: true
   budget_pressure: true
 
@@ -803,6 +891,26 @@ service_tier: priority
 # Diagnostics
 forensics_dedup: true
 show_token_cost: true
+
+# Parallel (milestone-level)
+parallel:
+  enabled: false
+  worker_model: claude-haiku-4-5
+
+# Slice-level parallelism
+slice_parallel:
+  enabled: false
+  max_workers: 2
+
+# Safety harness
+safety_harness:
+  enabled: true
+  checkpoints: true
+  auto_rollback: false
+
+# Enhanced verification
+enhanced_verification: true
+enhanced_verification_strict: false
 
 # Experimental
 experimental:
